@@ -2,11 +2,10 @@
 
 ## 開発環境
 
-フロントエンドの依存パッケージをインストールして、開発サーバーを起動します。
+依存パッケージをインストールし、リポジトリ直下から開発サーバーを起動します。
 
 ```bash
-cd frontend
-npm install
+npm --prefix frontend install
 npm run dev
 ```
 
@@ -17,4 +16,4 @@ npm run typecheck
 npm run build
 ```
 
-Next.jsアプリとその設定は [`frontend/`](./frontend/) にあります。
+Next.jsアプリとその依存関係・設定は [`frontend/`](./frontend/) にあります。ルートのnpmスクリプトは、コマンドをフロントエンドの作業ディレクトリに転送します。
