@@ -1,0 +1,17 @@
+export const ICON_PATHS: Record<string, string> = {
+lap:'<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 20h20"/>',
+bk:'<path d="M2 5h7a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H2zM22 5h-7a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h8z"/>',
+cmp:'<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
+usr:'<circle cx="9" cy="8" r="3"/><path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1M16 5.5a3 3 0 0 1 0 5.5M18 14a5 5 0 0 1 3 5v1"/>',
+spk:'<path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>',
+bulb:'<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10c1 1 1 2 1 3h6c0-1 0-2 1-3a6 6 0 0 0-4-10z"/>',
+mtn:'<path d="M3 19l6-10 4 6 2-3 6 7zM18 3v4M16 5h4"/>',
+phi:'<path d="M12 5a3 3 0 0 0-5.9.8A3.5 3.5 0 0 0 6 12a3.5 3.5 0 0 0 1.5 5.5A3 3 0 0 0 12 19zM12 5a3 3 0 0 1 5.9.8A3.5 3.5 0 0 1 18 12a3.5 3.5 0 0 1-1.5 5.5A3 3 0 0 1 12 19"/>',
+his:'<path d="M8 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7M8 4a2 2 0 0 0-2 2v12a2 2 0 0 1-2 2h3M11 9h5M11 13h5"/>',
+soc:'<circle cx="9" cy="8" r="3"/><path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1M16 5.5a3 3 0 0 1 0 5.5M18 14a5 5 0 0 1 3 5v1"/>',
+sci:'<ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(45 12 12)"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-45 12 12)"/><circle cx="12" cy="12" r="1"/>',
+tec:'<rect x="7" y="7" width="10" height="10" rx="1"/><path d="M10 10h4v4h-4zM9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"/>',
+mon:'<path d="M14 6l4 4-8 8-4-4zM14 6l2-2 4 4-2 2M6 14l-3 3 4 4 3-3"/>',
+art:'<path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 1.5-2-.5-1 0-2 1.5-2h2a3 3 0 0 0 3-3c0-6-4-11-8-11z"/><circle cx="8" cy="11" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/>',
+lan:'<path d="M4 6h9M8.5 4v2M6 6c0 4 3 7 6 8M12 6c-1 4-4 7-8 8M14 20l4-9 4 9M15.5 17h5"/>',
+lit:'<path d="M2 5h7a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H2zM22 5h-7a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h8z"/>'}
