@@ -1,0 +1,13 @@
+extends:
+  - recommended
+
+rules:
+  # 例がスキーマに一致しない状態を許可しない。API 契約の正本を保つため error にする。
+  no-invalid-media-type-examples: error
+  # 全コンポーネントが参照されていることを確認する。
+  no-unused-components: error
+  # このドキュメントは公開APIではないため、ライセンス表記は要求しない。
+  info-license: off
+  # GET /health は入力を受け取らないため 4XX を定義しない。ルールは全operation共通のため
+  # 無効化するが、推薦API側の4XXは check-contract で定義済みステータスを確認する。
+  operation-4xx-response: off
