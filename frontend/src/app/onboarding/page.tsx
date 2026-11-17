@@ -11,7 +11,7 @@ const BASE_QUESTIONS: Question[] = [
     { icon: 'cmp', label: '知らない世界をのぞきたい', value: 2 }, { icon: 'usr', label: '人や社会のことを知りたい', value: 3 },
     { icon: 'spk', label: '特にない・なんとなく', value: 4 }] },
   { kind: 'genres', title: ['気になるテーマを', 'いくつか選んでみてください'], subtitle: '（あとで変更できます）' },
-  { kind: 'single', answerKey: 'q3', title: ['どんなきっかけなら、', 'もっと知りたくなりそう？'], options: [
+  { kind: 'single', answerKey: 'q3', title: ['どんな内容なら、', 'もっと知りたくなる？'], options: [
     { icon: 'mtn', label: '新しい見方に出会う', value: 0 }, { icon: 'bulb', label: '知らないことを知る', value: 1 },
     { icon: 'spk', label: '考えを深める', value: 2 }, { icon: 'bk', label: '物語から知る', value: 3 },
     { icon: 'spk', label: 'まだわからない', value: 4 }] },
