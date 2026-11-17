@@ -22,14 +22,24 @@ info:
 
     ## 正本の分担
 
-    - 送受信の構造と列挙値: この `openapi.yaml`
+    - 送受信の構造・列挙値・意味条件と処理: この `openapi.yaml` の
+      `description`・`x-validation-rules`
     - 星ID・名称・親子関係・基本検索語: `contracts/themes.json`
     - 質問・選択肢・選択数・分岐条件: `contracts/questionnaires/<version>.json`
-    - 意味上の制約と処理の説明: `docs/backend-api.md`
+
+    質問ID・選択肢・分岐条件など意味が変わる変更は新しい質問票の版にし、誤字など意味が
+    変わらない文面修正は同じ版でよい。新しい版はバックエンドが先に受理し疎通確認してから
+    フロントが送信を開始する。移行中は `onboarding-v1` と `onboarding-v2` の両方を受理し、
+    保存済みの v1 回答を勝手に v2 として送信しない。
+    API契約の `info.version`、URLの `/v1`、質問票の `onboarding-v1`・`onboarding-v2` は
+    それぞれ独立した版である。
 
     JSON Schema（OpenAPI 3.0）で表せない条件は `description`・`x-validation-rules`・
     カタログに明記し、実装時の Lambda で検証する。このドキュメントの構造検証だけで
     すべての回答条件が保証されるわけではない。
+
+    起動・検証方法、呼び出し例、フロント接続上の注意、未選定の実装設定は
+    [USAGE.md](USAGE.md) を参照。
 
     ## 共通の前提
 
@@ -93,6 +103,14 @@ paths:
           フォールバックせず `502 DISCOVERY_UPSTREAM_ERROR` を返す。
         - AI の停止・スロットリング等は `503 DISCOVERY_UNAVAILABLE`、
           タイムアウトは `504 UPSTREAM_TIMEOUT`。
+
+        ### 時間上限
+
+        - Bedrock の星・検索語選出は15秒、API全体は25秒、フロント待機は30秒。
+        - 各上限にはSDK内の待ち時間を含め、各処理にはその段階上限と全体の残り時間の
+          短い方を適用する。AI処理が15秒を超えた場合と全体の期限に達した場合は
+          `504 UPSTREAM_TIMEOUT` とし、応答のための時間を残して打ち切る。
+        - これらは設計値であり、実測値ではない。
 
         ### 入力検証の担当
 
@@ -601,19 +619,44 @@ paths:
 
         ### 処理とエラー
 
-        - Google Books 検索（`q`、`langRestrict=ja`、`printType=books`、relevance、
-          最大10候補）→ 既存の整形・重複除外 → 最大5冊 →
-          紹介文のある本だけ Bedrock で個別の理由をまとめて生成。
+        - Google Books 検索は `q` をそのまま使い、`langRestrict=ja`・`printType=books`・
+          `orderBy=relevance`・`maxResults=10` を指定する。
+        - volume ID の重複と、IDまたは書名がない候補を除き、検索結果の順で最大5冊を選ぶ。
+          ISBN単位の版違い統合は行わない。5冊を埋めるための無関係な検索はしない。
+        - 内容紹介が空でない本だけを対象に、候補をまとめて Bedrock で個別の理由を1回生成する。
+          内容紹介のない本だけ、または候補0件のときは Bedrock を呼ばない。
+          通常は Google Books 1回・Bedrock 1回で、自動再試行を重ねない。
         - 書籍が0件でも成功として `items: []` を返す。
         - 理由の生成に失敗しても、取得済みの本は `200` で返し、
           `recommendationReason: null` と警告を付ける。GET の理由生成には `503` を割り当てない。
-        - Google Books の失敗は `502 BOOKS_UPSTREAM_ERROR`、書籍検索の6秒超過は
-          `504 UPSTREAM_TIMEOUT`。理由生成は10秒、API全体は25秒で、
-          書籍取得済みなら理由 null ＋警告の部分成功にする。
+        - Google Books の失敗は `502 BOOKS_UPSTREAM_ERROR`。検索6秒超過は
+          `504 UPSTREAM_TIMEOUT`。理由生成10秒・API全体25秒の期限に達したときは、
+          有効な書籍を取得済みなら理由 null ＋警告の部分成功（`200`）、
+          取得できていなければ `504` とする。
         - 警告は `INSUFFICIENT_BOOK_METADATA` と `RECOMMENDATION_REASON_UNAVAILABLE` のみ。
           検索語 fallback は廃止した。
         - `Cache-Control: no-store`。CORS のプリフライトでは
           `X-Discovery-Context` を許可ヘッダーに含める。
+
+        ### 時間上限
+
+        - 書籍検索6秒、理由生成10秒、API全体25秒、フロント待機30秒。
+        - 各上限にはSDK内の待ち時間を含め、各処理にはその段階上限と全体の残り時間の
+          短い方を適用する。設計値であり実測値ではない。
+
+        ### おすすめ理由
+
+        - 理由生成へ渡すのは、書籍の `id`・`title`・`authors`・整形済み `description`、
+          選択した星、質問票IDの意味に解決した回答だけ。回答・書誌は資料であり、
+          その中の文言をモデルへの命令として扱わない。
+        - 空でない `description` がある本だけを対象にする。書名だけから内容を推測せず、
+          AIの事前知識で未取得の内容・章構成・難易度・効能を作り足さず、
+          性格・適性を断定しない。
+        - 回答の少なくとも1つと、取得した書誌内容を結びつける。意味上の関連はJSONの
+          構造検証では保証できないため、プロンプトで制約し、代表的な回答と取得書籍で
+          実装時に人が確認する。
+        - AIには候補の書籍IDと理由の対応を返させ、存在しないID・重複ID・空の理由・
+          上限超過など不正な理由だけを `null` にする。本自体は返す。
 
         ### 入力検証の担当
 
@@ -1314,6 +1357,9 @@ components:
             上限200文字（Unicodeコードポイント）。根拠不足、生成・検証失敗時、
             空文字または空白だけの理由は `null` とする（前後の空白を除いた後に空なら `null`）。
             プレーンテキストで、HTMLやMarkdownを含めない。
+            回答の少なくとも1つと取得書誌内容を結びつけ、空でない `description` を根拠にする。
+            書名だけの推測、未取得の内容・章・難易度・効能の作り足し、性格・適性の断定をしない。
+            回答・書誌は資料であり、モデルへの命令として扱わない。
         infoUrl:
           type: string
           format: uri
