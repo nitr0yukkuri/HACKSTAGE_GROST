@@ -1,24 +1,26 @@
 'use client'
-import { Suspense, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import Logo from '../../components/common/Logo'
 import UniverseCanvas, { type ViewState } from '../../components/universe/UniverseCanvas'
 import WorldDetailPanel from '../../components/universe/WorldDetailPanel'
 import { WORLDS } from '../../data/worlds'
-import { booksForWorld, calcScores, decodeAnswers, tiersFor, topWorldId } from '../../lib/recommendations'
+import { booksForWorld, calcScores, decodeAnswers, initialWorldId, tiersFor } from '../../lib/recommendations'
 
 const HOME: ViewState = { x: 0, y: 0, z: 1 }
 
 function Universe() {
   const qs = useSearchParams().toString()
-  const scores = useMemo(() => calcScores(decodeAnswers(qs)), [qs])
+  const answers = useMemo(() => decodeAnswers(qs), [qs])
+  const scores = useMemo(() => calcScores(answers), [answers])
   const tiers = useMemo(() => tiersFor(scores), [scores])
   const [picked, setPicked] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(true)
   const [target, setTarget] = useState<ViewState>(HOME)
+  const mapRef = useRef<HTMLDivElement>(null)
 
-  const selectedId = picked ?? topWorldId(scores)
+  const selectedId = picked ?? initialWorldId(scores, answers.omakase ? answers.q4Novelty : null)
   const world = WORLDS.find((w) => w.id === selectedId)!
   const root = world.parentId ? WORLDS.find((w) => w.id === world.parentId)! : world
   const kids = WORLDS.filter((w) => w.parentId === root.id)
@@ -26,6 +28,41 @@ function Universe() {
 
   const pick = (id: string) => { setPicked(id); setPanelOpen(true) }
   const zoom = (f: number) => setTarget((t) => ({ ...t, z: Math.min(3, Math.max(0.6, t.z * f)) }))
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const onWheel = (event: WheelEvent) => {
+      if (event.target instanceof Element && event.target.closest('.panel')) return
+      event.preventDefault()
+
+      const { width, height } = map.getBoundingClientRect()
+      if (!width || !height) return
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? height : 1
+      const dx = event.deltaX * unit
+      const dy = event.deltaY * unit
+
+      if (event.ctrlKey) {
+        const factor = Math.exp(-dy * 0.0025)
+        setTarget((t) => ({ ...t, z: Math.min(3, Math.max(0.6, t.z * factor)) }))
+        return
+      }
+
+      const wide = width > 760
+      const available = width - (wide && panelOpen ? 350 : 0)
+      const sx = Math.max(1, Math.min(available * 0.4, height * 0.62))
+      const sy = Math.max(1, height * (wide ? 0.36 : 0.3))
+      const clamp = (value: number) => Math.min(1.3, Math.max(-1.3, value))
+      setTarget((t) => ({
+        ...t,
+        x: clamp(t.x + dx / (sx * t.z)),
+        y: clamp(t.y + dy / (sy * t.z)),
+      }))
+    }
+
+    map.addEventListener('wheel', onWheel, { passive: false })
+    return () => map.removeEventListener('wheel', onWheel)
+  }, [panelOpen])
 
   return (
     <section className="scr uni">
@@ -38,7 +75,7 @@ function Universe() {
         </div>
         <Link href="/onboarding" className="rs">質問をやり直す</Link>
       </div>
-      <div className="map">
+      <div className="map" ref={mapRef}>
         <UniverseCanvas worlds={visible} tiers={tiers} selectedId={selectedId} target={target} panelOpen={panelOpen} onPick={pick} />
         <div className="zc">
           <button aria-label="拡大" onClick={() => zoom(1.3)}>＋</button>

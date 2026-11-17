@@ -26,11 +26,16 @@ export interface OnboardingAnswers {
   q2: string[]
   omakase: boolean
   q3: number | null
+  q4Topic: string | null
+  q4Novelty: number | null
 }
+
+export type QuestionAnswerKey = 'q1' | 'q3' | 'q4Topic' | 'q4Novelty'
 
 export interface Question {
   kind: 'single' | 'genres'
   title: string[]
   subtitle?: string
-  options?: { icon: string; label: string }[]
+  answerKey?: QuestionAnswerKey
+  options?: { icon: string; label: string; value: string | number }[]
 }
