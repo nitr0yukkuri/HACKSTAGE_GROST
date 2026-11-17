@@ -104,7 +104,9 @@ export default function OnboardingPage() {
   }
   const back = () => (step === 0 ? router.push('/') : setStep(step - 1))
   // おまかせ等の追加質問を選んでも、テーマ選択中の進捗が後戻りしないようにする。
-  const progressTotal = step < 2 ? BASE_QUESTIONS.length : questions.length
+  const progressTotal = step < 2
+    ? BASE_QUESTIONS.length + (answers.q1 === 4 ? 1 : 0)
+    : questions.length
 
   return (
     <section className="scr">
