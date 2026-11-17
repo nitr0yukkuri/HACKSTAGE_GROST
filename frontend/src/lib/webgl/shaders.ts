@@ -26,9 +26,9 @@ void main() {
   vec2 q = gl_PointCoord * 2.0 - 1.0;
   float d = length(q);
   float k = max(1.0 - d, 0.0);
-  float core = smoothstep(0.14, 0.0, d);
+  float core = 1.0 - smoothstep(0.0, 0.14, d);
   float glow = k * k * k * 0.8;
-  float ray = (smoothstep(0.05, 0.0, abs(q.x)) + smoothstep(0.05, 0.0, abs(q.y))) * k * k;
+  float ray = ((1.0 - smoothstep(0.0, 0.05, abs(q.x))) + (1.0 - smoothstep(0.0, 0.05, abs(q.y)))) * k * k;
   float a = (core + glow + ray) * vb;
   o = vec4(mix(vc, vec3(1.0), core) * a, a);
 }`
