@@ -1,0 +1,16 @@
+# 依存関係
+node_modules/
+
+# ビルド成果物
+.next/
+out/
+dist/
+
+# ローカル環境
+.env
+.env.local
+.env.*.local
+
+# ログとOSの一時ファイル
+*.log
+.DS_Store

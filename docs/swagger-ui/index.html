@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>ほしるべ API 契約（ローカル参照用）</title>
+    <link rel="stylesheet" href="./node_modules/swagger-ui-dist/swagger-ui.css" />
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      body {
+        margin: 0;
+        background: #0d1220;
+      }
+
+      .contract-banner {
+        box-sizing: border-box;
+        padding: 14px 20px;
+        background: #1c2440;
+        border-bottom: 1px solid #3a466e;
+        color: #e8ecff;
+        font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .contract-banner strong {
+        color: #ffd479;
+      }
+
+      .contract-banner code {
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: #2c3658;
+        color: #dce4ff;
+        font-size: 12px;
+      }
+
+      .contract-banner a {
+        color: #9fc2ff;
+      }
+
+      #swagger-ui {
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="contract-banner">
+      <strong>これは API 契約の参照ページです。</strong>
+      ほしるべの API サーバー（API Gateway・Lambda）はまだ実装されていません。
+      表示しているサーバー URL <code>https://api.example.invalid</code> は実在しないプレースホルダーです。
+      リクエストの送信（Try it out）は無効にしています。契約の正本は同一ディレクトリの
+      <code>openapi.yaml</code>、星と質問票のカタログはリポジトリの <code>contracts/</code> です。
+    </div>
+    <div id="swagger-ui"></div>
+    <script src="./node_modules/swagger-ui-dist/swagger-ui-bundle.js"></script>
+    <script src="./node_modules/swagger-ui-dist/swagger-ui-standalone-preset.js"></script>
+    <script>
+      window.ui = SwaggerUIBundle({
+        url: './openapi.yaml',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        supportedSubmitMethods: [],
+        tryItOutEnabled: false,
+        validatorUrl: null,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: 'StandaloneLayout',
+        docExpansion: 'list',
+        defaultModelsExpandDepth: 1,
+        displayRequestDuration: false,
+      })
+    </script>
+  </body>
+</html>

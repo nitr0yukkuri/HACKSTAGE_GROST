@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "description": "ほしるべの星ID・名称・親子関係・基本検索語の正本。themeId は既存フロント（771b1e7）の World.id と一致する。座標・色・明るさはフロントの表示関心事であり、この契約には含めない。",
+  "themes": [
+    {
+      "id": "phi",
+      "name": "哲学",
+      "parentId": null,
+      "searchQuery": "哲学 入門"
+    },
+    {
+      "id": "his",
+      "name": "歴史",
+      "parentId": null,
+      "searchQuery": "歴史 入門"
+    },
+    {
+      "id": "soc",
+      "name": "社会",
+      "parentId": null,
+      "searchQuery": "社会学 入門"
+    },
+    {
+      "id": "sci",
+      "name": "自然科学",
+      "parentId": null,
+      "searchQuery": "自然科学 入門"
+    },
+    {
+      "id": "tec",
+      "name": "テクノロジー",
+      "parentId": null,
+      "searchQuery": "テクノロジー 入門"
+    },
+    {
+      "id": "mon",
+      "name": "ものづくり",
+      "parentId": null,
+      "searchQuery": "ものづくり 入門"
+    },
+    {
+      "id": "art",
+      "name": "芸術",
+      "parentId": null,
+      "searchQuery": "芸術 入門"
+    },
+    {
+      "id": "lan",
+      "name": "言語",
+      "parentId": null,
+      "searchQuery": "言語学 入門"
+    },
+    {
+      "id": "lit",
+      "name": "文学",
+      "parentId": null,
+      "searchQuery": "文学 入門"
+    },
+    {
+      "id": "phi-ethics",
+      "name": "生き方・倫理",
+      "parentId": "phi",
+      "searchQuery": "倫理 生き方"
+    },
+    {
+      "id": "phi-intro",
+      "name": "哲学入門",
+      "parentId": "phi",
+      "searchQuery": "哲学 入門"
+    },
+    {
+      "id": "tec-prog",
+      "name": "プログラミング",
+      "parentId": "tec",
+      "searchQuery": "プログラミング 入門"
+    },
+    {
+      "id": "tec-sec",
+      "name": "セキュリティ",
+      "parentId": "tec",
+      "searchQuery": "セキュリティ 入門"
+    },
+    {
+      "id": "mon-design",
+      "name": "設計とデザイン",
+      "parentId": "mon",
+      "searchQuery": "デザイン 設計"
+    },
+    {
+      "id": "mon-think",
+      "name": "つくる思考",
+      "parentId": "mon",
+      "searchQuery": "エンジニア 思考法"
+    }
+  ]
+}
