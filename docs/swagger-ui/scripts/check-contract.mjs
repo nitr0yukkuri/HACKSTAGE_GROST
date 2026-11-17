@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * ほしるべ API 契約の静的検証（ドキュメント用途）。
- * 1. 星・質問ID・enum・選択数・版が contracts/ と docs/openapi.yaml で一致するか
+ * 1. 星・質問ID・enum・選択数・版が contracts/ と docs/swagger-ui/openapi.yaml で一致するか
  * 2. seed 本文と GET ヘッダーの回答例が質問の一意性・必須・排他・v2分岐を満たすか
  * 3. seed の出力例が大ジャンル3件・一意・検索語条件を満たすか
  * 4. GET が本文を持たず、q と X-Discovery-Context を必須にしているか
@@ -14,7 +14,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import YAML from 'yaml'
 const docsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const repoRoot = path.resolve(docsDir, '..')
+const repoRoot = path.resolve(docsDir, '..', '..')
 const spec = YAML.parse(fs.readFileSync(path.join(docsDir, 'openapi.yaml'), 'utf8'))
 const themes = JSON.parse(fs.readFileSync(path.join(repoRoot, 'contracts/themes.json'), 'utf8')).themes
 const questionnaireEntries = fs

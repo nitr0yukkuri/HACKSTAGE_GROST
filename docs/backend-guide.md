@@ -6,7 +6,7 @@
 
 - [プロダクト・構成の企画書](hoshirube.md)
 - [バックエンドAPI仕様（確定版）](backend-api.md)
-- [OpenAPI契約（正本）](openapi.yaml)
+- [OpenAPI契約（正本）](swagger-ui/openapi.yaml)
 - [星カタログ](../contracts/themes.json)
 - [質問票 onboarding-v1](../contracts/questionnaires/onboarding-v1.json)
 - [質問票 onboarding-v2](../contracts/questionnaires/onboarding-v2.json)
@@ -71,17 +71,17 @@ const result = await booksRes.json();
 
 ## ローカルで契約を見る
 
-`docs` はアプリ本体とは独立したnpmプロジェクト。Node.js 22.12.0以上、npm 10以上を前提とする。<br>
+`docs/swagger-ui` はアプリ本体とは独立したnpmプロジェクト。Node.js 22.12.0以上、npm 10以上を前提とする。<br>
 以下のnpmコマンドはすべてリポジトリルートで実行する。
 
 ```sh
-npm --prefix docs ci --ignore-scripts
-npm --prefix docs run lint
-npm --prefix docs run check
-npm --prefix docs run serve
+npm --prefix docs/swagger-ui ci --ignore-scripts
+npm --prefix docs/swagger-ui run lint
+npm --prefix docs/swagger-ui run check
+npm --prefix docs/swagger-ui run serve
 ```
 
-`docs` は静的配布アセットのみのため、依存導入では `--ignore-scripts` を付け、不要なpostinstallを実行しない。グローバルのnpm設定は変更しない。
+`docs/swagger-ui` は静的配布アセットのみのため、依存導入では `--ignore-scripts` を付け、不要なpostinstallを実行しない。グローバルのnpm設定は変更しない。
 
 `serve` を実行したら、ブラウザで <http://127.0.0.1:8080/> を開く。
 
@@ -97,13 +97,17 @@ contracts/
   themes.json                  星ID・名称・親子関係・基本検索語
   questionnaires/              質問票の版ごとの定義
 docs/
-  openapi.yaml                 送受信契約の正本（OpenAPI 3.0.3）
-  index.html                   ローカルSwagger UI
-  package.json                 ドキュメント用ツール
-  redocly.yaml                 Redocly lint設定
-  scripts/check-contract.mjs   カタログと意味条件の静的検証
-  hoshirube.md                 プロダクト・構成の企画書
   backend-api.md                確定API仕様
+  backend-guide.md              この開発ガイド
+  hoshirube.md                  プロダクト・構成の企画書
+  swagger-ui/
+    openapi.yaml                送受信契約の正本（OpenAPI 3.0.3）
+    index.html                  ローカルSwagger UI
+    package.json                ドキュメント用ツール
+    package-lock.json           依存の固定
+    redocly.yaml                Redocly lint設定
+    scripts/check-contract.mjs  カタログと意味条件の静的検証
+    node_modules/               ローカル依存（Git対象外）
 ```
 
 ## 実装状況

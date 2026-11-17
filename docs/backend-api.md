@@ -10,11 +10,11 @@
 
 関連ファイル：
 
-- 送受信契約の正本：[`docs/openapi.yaml`](openapi.yaml)（OpenAPI 3.0.3）
+- 送受信契約の正本：[`docs/swagger-ui/openapi.yaml`](swagger-ui/openapi.yaml)（OpenAPI 3.0.3）
 - 星ID・名称・親子関係・基本検索語：[`contracts/themes.json`](../contracts/themes.json)
 - 質問票の正本：[`contracts/questionnaires/onboarding-v1.json`](../contracts/questionnaires/onboarding-v1.json)、[`onboarding-v2.json`](../contracts/questionnaires/onboarding-v2.json)
-- ローカルSwagger UI：[`docs/index.html`](index.html)
-- 静的検証：[`docs/scripts/check-contract.mjs`](scripts/check-contract.mjs)
+- ローカルSwagger UI：[`docs/swagger-ui/index.html`](swagger-ui/index.html)
+- 静的検証：[`docs/swagger-ui/scripts/check-contract.mjs`](swagger-ui/scripts/check-contract.mjs)
 
 ## 1. 確定した仕様
 
@@ -34,7 +34,7 @@
 
 | 対象 | 正本 |
 | --- | --- |
-| パス、HTTPステータス、JSONの構造、enum、上限 | `docs/openapi.yaml` |
+| パス、HTTPステータス、JSONの構造、enum、上限 | `docs/swagger-ui/openapi.yaml` |
 | 星ID、名称、親子関係、基本検索語 | `contracts/themes.json` |
 | 質問ID、選択肢ID、表示文言、選択数、必須・分岐条件 | `contracts/questionnaires/<version>.json` |
 | 意味上の制約、処理、画面との分担 | この文書 |
@@ -497,17 +497,17 @@ Bedrockのスロットリング・一時停止は理由生成の失敗として�
 OpenAPI・カタログ・Swagger UIは次のコマンドで扱う。いずれもドキュメント用で、アプリ本体の依存とは分離している。Node.js 22.12.0以上、npm 10以上を前提とする。
 
 ```sh
-npm --prefix docs ci --ignore-scripts
-npm --prefix docs run lint
-npm --prefix docs run check
-npm --prefix docs run serve
+npm --prefix docs/swagger-ui ci --ignore-scripts
+npm --prefix docs/swagger-ui run lint
+npm --prefix docs/swagger-ui run check
+npm --prefix docs/swagger-ui run serve
 ```
 
-`docs` は静的配布アセットのみのため、依存導入では `--ignore-scripts` を付け、不要なpostinstallを実行しない。グローバルのnpm設定は変更しない。
+`docs/swagger-ui` は静的配布アセットのみのため、依存導入では `--ignore-scripts` を付け、不要なpostinstallを実行しない。グローバルのnpm設定は変更しない。これらのコマンドはリポジトリルートで実行する。
 
 - `lint` はRedocly CLIでOpenAPIの形式・参照・exampleとスキーマの一致を検証する。
 - `check` はカタログとOpenAPIのenum・選択数・版の一致、seed本文とGETコンテキストの回答例の意味条件、seed例の3ID一意性・大ジャンル・検索語、GETのpath・query・headerの必須、旧パスの不存在、未知の星・未知の選択肢・v2分岐の変異検出を確認する静的検証。本番バリデータではなく、APIの動作確認は行わない。
-- `serve` は `http-server` で `docs` を `127.0.0.1:8080` に配信する。Swagger UIはローカルアセットのみを使い、Try it outは無効。
+- `serve` は `http-server` で `docs/swagger-ui` を `127.0.0.1:8080` に配信する。Swagger UIはローカルアセットのみを使い、Try it outは無効。
 - 今回の検証範囲は、仕様・JSON例の静的検証とローカルSwagger UIの表示確認。外部通信を伴うAPIテスト、AWS接続、デプロイは行っていない。
 
 ### 参考

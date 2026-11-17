@@ -122,11 +122,11 @@ APIサーバー（API Gateway・Lambda）はまだ実装されていません。
 
 ### 契約の参照
 
-- 送受信の正本：`docs/openapi.yaml`（OpenAPI 3.0.3、API契約 `info.version` は `2.0.0`）
+- 送受信の正本：`docs/swagger-ui/openapi.yaml`（OpenAPI 3.0.3、API契約 `info.version` は `2.0.0`）
 - 星ID・名称・親子関係・基本検索語：`contracts/themes.json`
 - 質問・選択肢・選択数・分岐条件：`contracts/questionnaires/`
 - 意味上の制約と処理：`docs/backend-api.md`
-- ローカルSwagger UI：`npm --prefix docs ci` の後、`npm --prefix docs run serve` を実行し、`http://127.0.0.1:8080/` を開く
+- ローカルSwagger UI：`npm --prefix docs/swagger-ui ci --ignore-scripts` の後、`npm --prefix docs/swagger-ui run serve` を実行し、`http://127.0.0.1:8080/` を開く
 
 URLの `/v1` はAPIの版、質問票の `onboarding-v1`・`onboarding-v2` は質問票の版で、互いに独立です。元の企画のURL `/v1` を維持しています。
 
