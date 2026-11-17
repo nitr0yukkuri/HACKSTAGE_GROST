@@ -103,7 +103,8 @@ export default function OnboardingPage() {
     else router.push(`/universe?${encodeAnswers(answers)}`)
   }
   const back = () => (step === 0 ? router.push('/') : setStep(step - 1))
-  const progressTotal = questions.length
+  // おまかせ等の追加質問を選んでも、テーマ選択中の進捗が後戻りしないようにする。
+  const progressTotal = step < 2 ? BASE_QUESTIONS.length : questions.length
 
   return (
     <section className="scr">
