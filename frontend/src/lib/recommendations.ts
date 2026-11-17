@@ -29,7 +29,7 @@ export function calcScores(a: OnboardingAnswers): Scores {
     GENRES.forEach((g) => (s[g.id] += 1))
   } else {
     a.q2.forEach((k) => { if (genreIds.has(k)) s[k] += 3 })
-    if (a.q4Topic && a.q4Topic !== 'skip' && a.q2.includes(a.q4Topic) && genreIds.has(a.q4Topic)) {
+    if (a.q1 === 4 && a.q4Topic && a.q4Topic !== 'skip' && a.q2.includes(a.q4Topic) && genreIds.has(a.q4Topic)) {
       s[a.q4Topic] += 2
     }
   }
@@ -64,7 +64,7 @@ export function encodeAnswers(a: OnboardingAnswers): string {
     }
   } else {
     p.set('q2', a.q2.join(','))
-    if (a.q4Topic && a.q4Topic !== 'skip' && genreIds.has(a.q4Topic) && a.q2.includes(a.q4Topic)) {
+    if (a.q1 === 4 && a.q4Topic && a.q4Topic !== 'skip' && genreIds.has(a.q4Topic) && a.q2.includes(a.q4Topic)) {
       p.set('q4t', a.q4Topic)
     }
   }
@@ -82,9 +82,10 @@ export function decodeAnswers(qs: string): OnboardingAnswers {
   const q2 = [...new Set((p.get('q2') ?? '').split(',').filter((id) => genreIds.has(id)))]
   const omakase = p.get('om') === '1'
   const topic = p.get('q4t')
-  const q4Topic = !omakase && topic && genreIds.has(topic) && q2.includes(topic) ? topic : null
+  const q1 = choice('q1', Q1_BOOST.length)
+  const q4Topic = q1 === 4 && !omakase && topic && genreIds.has(topic) && q2.includes(topic) ? topic : null
   return {
-    q1: choice('q1', Q1_BOOST.length),
+    q1,
     q3: choice('q3', Q3_BOOST.length),
     omakase,
     q2,
