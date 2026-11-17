@@ -4,7 +4,7 @@ export default function ProgressBar({ step, total }: { step: number; total: numb
 
   return (
     <div className="pg">
-      <div className="pg-head"><span>進捗</span><strong>{progress}%</strong></div>
+      <div className="pg-head"><span>質問</span><strong>{progress}%</strong></div>
       <div
         className="pg-track"
         role="progressbar"
