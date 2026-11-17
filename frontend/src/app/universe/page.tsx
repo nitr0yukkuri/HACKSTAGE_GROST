@@ -33,7 +33,12 @@ function Universe() {
     if (!map) return
 
     const onWheel = (event: WheelEvent) => {
-      if (event.target instanceof Element && event.target.closest('.panel')) return
+      const panel = event.target instanceof Element ? event.target.closest<HTMLElement>('.panel') : null
+      if (panel) {
+        const canScrollUp = panel.scrollTop > 0
+        const canScrollDown = panel.scrollTop + panel.clientHeight < panel.scrollHeight - 1
+        if ((event.deltaY < 0 && canScrollUp) || (event.deltaY > 0 && canScrollDown)) return
+      }
       event.preventDefault()
 
       const { width, height } = map.getBoundingClientRect()
