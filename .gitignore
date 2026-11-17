@@ -1,16 +1,20 @@
-# 依存関係
+# Dependencies
 node_modules/
 
-# ビルド成果物
+# Build artifacts
 .next/
 out/
 dist/
 
-# ローカル環境
+# Local environment
 .env
 .env.local
 .env.*.local
 
-# ログとOSの一時ファイル
+# Logs and OS temporary files
 *.log
 .DS_Store
+
+# TypeScript and Next.js generated files
+*.tsbuildinfo
+next-env.d.ts
