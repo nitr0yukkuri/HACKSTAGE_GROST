@@ -1,0 +1,22 @@
+{
+  "name": "hoshirube-docs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ほしるべ API 契約の静的検証とローカル Swagger UI。アプリ本体とは独立したドキュメント用プロジェクト。",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "lint": "redocly lint openapi.yaml --config redocly.yaml",
+    "check": "node scripts/check-contract.mjs",
+    "serve": "http-server . -a 127.0.0.1 -p 8080 -c-1"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.79.0",
+    "http-server": "14.1.1",
+    "swagger-ui-dist": "5.35.0",
+    "yaml": "2.9.1"
+  }
+}

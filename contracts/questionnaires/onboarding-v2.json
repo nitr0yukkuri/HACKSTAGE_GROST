@@ -1,0 +1,181 @@
+{
+  "version": "onboarding-v2",
+  "description": "3問に加え、interest が none のときだけ curiosity を必須にする質問票。interest が none 以外のときは curiosity を送らない。既存の3問画面は onboarding-v1 で接続できる。",
+  "answerLimits": {
+    "minItems": 3,
+    "maxItems": 4
+  },
+  "questions": [
+    {
+      "id": "interest",
+      "prompt": "いま、どんなことにちょっと興味がある？",
+      "selection": {
+        "min": 1,
+        "max": 1
+      },
+      "required": {
+        "type": "always"
+      },
+      "options": [
+        {
+          "id": "create",
+          "label": "何かをつくる・つくってみたい"
+        },
+        {
+          "id": "think_deeply",
+          "label": "考える・深く知りたい"
+        },
+        {
+          "id": "explore_unknown",
+          "label": "知らない世界をのぞきたい"
+        },
+        {
+          "id": "people_society",
+          "label": "人や社会のことを知りたい"
+        },
+        {
+          "id": "none",
+          "label": "特にない・なんとなく"
+        }
+      ]
+    },
+    {
+      "id": "curiosity",
+      "prompt": "その中でも、ちょっと気になるのはどれ？",
+      "selection": {
+        "min": 1,
+        "max": 3
+      },
+      "requiredWhen": {
+        "questionId": "interest",
+        "includesOptionId": "none"
+      },
+      "forbiddenWhen": {
+        "questionId": "interest",
+        "excludesOptionId": "none"
+      },
+      "options": [
+        {
+          "id": "music_emotions",
+          "label": "音楽で気分が変わる理由"
+        },
+        {
+          "id": "space_mysteries",
+          "label": "宇宙の謎"
+        },
+        {
+          "id": "city_origins",
+          "label": "街が今の形になった理由"
+        }
+      ]
+    },
+    {
+      "id": "themes",
+      "prompt": "気になるテーマをいくつか選んでみてください",
+      "selection": {
+        "min": 1,
+        "max": 9
+      },
+      "required": {
+        "type": "always"
+      },
+      "optionSource": "themes.level1",
+      "exclusiveOptionIds": [
+        "omakase"
+      ],
+      "options": [
+        {
+          "id": "phi",
+          "label": "哲学"
+        },
+        {
+          "id": "his",
+          "label": "歴史"
+        },
+        {
+          "id": "soc",
+          "label": "社会"
+        },
+        {
+          "id": "sci",
+          "label": "自然科学"
+        },
+        {
+          "id": "tec",
+          "label": "テクノロジー"
+        },
+        {
+          "id": "mon",
+          "label": "ものづくり"
+        },
+        {
+          "id": "art",
+          "label": "芸術"
+        },
+        {
+          "id": "lan",
+          "label": "言語"
+        },
+        {
+          "id": "lit",
+          "label": "文学"
+        },
+        {
+          "id": "omakase",
+          "label": "おまかせ"
+        }
+      ]
+    },
+    {
+      "id": "reading_experience",
+      "prompt": "本を読むとき、どんな体験が好き？",
+      "selection": {
+        "min": 1,
+        "max": 1
+      },
+      "required": {
+        "type": "always"
+      },
+      "options": [
+        {
+          "id": "new_perspective",
+          "label": "新しい視点に出会う"
+        },
+        {
+          "id": "learn_knowledge",
+          "label": "知らない知識が増える"
+        },
+        {
+          "id": "deepen_thought",
+          "label": "考えが深まる・整理される"
+        },
+        {
+          "id": "immerse_story",
+          "label": "物語の世界に没頭する"
+        }
+      ]
+    }
+  ],
+  "conditionalRules": [
+    {
+      "id": "curiosity-required-when-interest-none",
+      "when": {
+        "questionId": "interest",
+        "includesOptionId": "none"
+      },
+      "then": {
+        "requireQuestion": "curiosity"
+      }
+    },
+    {
+      "id": "curiosity-forbidden-when-interest-not-none",
+      "when": {
+        "questionId": "interest",
+        "excludesOptionId": "none"
+      },
+      "then": {
+        "forbidQuestion": "curiosity"
+      }
+    }
+  ]
+}

@@ -1,0 +1,1482 @@
+openapi: 3.0.3
+info:
+  title: ほしるべ API
+  version: 2.0.0
+  description: |
+    ほしるべ MVP のバックエンド API 契約（確定版）。**v1.0.0 から破壊的に変更**している。
+
+    元の体験どおり、質問への回答を `POST /v1/discovery/seed` に送ると、
+    Bedrock が星カタログの大ジャンルから異なる3個と、星ごとの書籍検索語を
+    おすすめ順で返す。フロントは最初の星を初期選択として表示する。
+    星を選ぶと `GET /v1/themes/{themeId}/books` が検索語で Google Books を検索し、
+    回答と書誌情報に基づく個別のおすすめ理由を付けて最大5冊返す。
+
+    旧 `POST /v1/books/recommendations` は削除した。互換 alias は提供しない。
+    星の選出をフロントの点数計算で代替しない。ログイン・Cookie・ユーザーDBは扱わない。
+
+    ## 実装状態
+
+    この契約に対応する API サーバー（API Gateway・Lambda）はまだ実装されていない。
+    `servers` の URL は契約参照用のプレースホルダーであり、実在しない。
+    このドキュメントは送受信の形を固定するためのもので、稼働中の API ではない。
+
+    ## 正本の分担
+
+    - 送受信の構造・列挙値・意味条件と処理: この `openapi.yaml` の
+      `description`・`x-validation-rules`
+    - 星ID・名称・親子関係・基本検索語: `contracts/themes.json`
+    - 質問・選択肢・選択数・分岐条件: `contracts/questionnaires/<version>.json`
+
+    質問ID・選択肢・分岐条件など意味が変わる変更は新しい質問票の版にし、誤字など意味が
+    変わらない文面修正は同じ版でよい。新しい版はバックエンドが先に受理し疎通確認してから
+    フロントが送信を開始する。移行中は `onboarding-v1` と `onboarding-v2` の両方を受理し、
+    保存済みの v1 回答を勝手に v2 として送信しない。
+    API契約の `info.version`、URLの `/v1`、質問票の `onboarding-v1`・`onboarding-v2` は
+    それぞれ独立した版である。
+
+    JSON Schema（OpenAPI 3.0）で表せない条件は `description`・`x-validation-rules`・
+    カタログに明記し、実装時の Lambda で検証する。このドキュメントの構造検証だけで
+    すべての回答条件が保証されるわけではない。
+
+    起動・検証方法、呼び出し例、フロント接続上の注意、未選定の実装設定は
+    [USAGE.md](USAGE.md) を参照。
+
+    ## 共通の前提
+
+    - HTTPS・JSON。`POST` の `Content-Type` は `application/json`。
+    - 回答は `POST` の本文に含める。`GET` では本文を使わず、回答を
+      `X-Discovery-Context` ヘッダーに JSON 文字列として含める。
+    - 回答全文を URL やログに載せない。`GET` の URL に載せる回答由来の値は `q` だけ。
+    - 推薦レスポンスは `Cache-Control: no-store`。
+    - Lambda が返す JSON には、成功・アプリケーションエラーともに `requestId` を含める。
+    - 推薦結果はアプリの DB に保存しない。
+    - セッション・認証・署名・暗号処理は追加しない。`X-Discovery-Context` は
+      無条件に信頼するトークンではなく、毎回検証する回答データである。
+servers:
+  - url: https://api.example.invalid
+    description: 未デプロイの契約参照用プレースホルダー。実在しないホスト。
+security: []
+tags:
+  - name: discovery
+    description: 回答から最初に表示する星と検索語を選ぶ。API サーバーは未実装。
+  - name: books
+    description: 選んだ星の書籍を検索し、個別のおすすめ理由を付ける。API サーバーは未実装。
+  - name: health
+    description: API の稼働確認。外部サービスは呼ばない。
+paths:
+  /v1/discovery/seed:
+    post:
+      tags:
+        - discovery
+      operationId: createDiscoverySeed
+      summary: 回答から最初に表示する3つの星と検索語を取得する
+      description: |
+        質問票の回答だけを送る。`themeId` は送らない。Bedrock が
+        `contracts/themes.json` の大ジャンル9IDから異なる3個と、各星の検索語を
+        1回で選び、おすすめ順の配列で返す。配列の先頭が初期選択の星である。
+
+        この API サーバーは未実装である。Swagger UI の Try it out は無効化している。
+        入力の型・必須・enum・件数・質問の組み合わせは Lambda で検証する。
+        不正な入力では外部サービスを呼ばない。
+
+        ### リクエストの受理条件（概要）
+
+        - `questionnaireVersion` は `onboarding-v1` または `onboarding-v2`。
+        - `answers` は実際に回答した質問だけを含む。表示しなかった質問は送らない。
+        - `answers` の件数は、`onboarding-v1` は3件、`onboarding-v2` は `interest=none` なら4件、それ以外は3件。
+        - 同じ `questionId` を重複して送らない。回答配列の順序は意味を持たない。
+        - `onboarding-v1` は `interest`・`themes`・`reading_experience` の3問が必須。
+          `curiosity` は送らない。
+        - `onboarding-v2` は上記3問に加え、`interest` が `none` のときだけ
+          `curiosity` が必須（1〜3個）。`interest` が `none` 以外のときは
+          `curiosity` を送らない。
+        - `themes` は大ジャンルを1〜9個、または `omakase` だけを選ぶ。
+        - 未回答を表す空配列や `null` を選択肢の代わりに送らない。
+        - `themeId` を含めない。含めた場合は `422 VALIDATION_ERROR`。
+
+        ### 出力の受理条件（Lambda が検証）
+
+        - `themes` は必ず3件。各 `themeId` は大ジャンルの9IDのいずれかで、重複しない。
+        - `searchQuery` は Lambda が AI の生出力を trim してから検証し、応答値は
+          前後空白なしで1〜128文字。trim 後に空なら不正とする。
+        - AI が未定義ID・重複ID・不正検索語・不正件数を返した場合、フロントの点数へ
+          フォールバックせず `502 DISCOVERY_UPSTREAM_ERROR` を返す。
+        - AI の停止・スロットリング等は `503 DISCOVERY_UNAVAILABLE`、
+          タイムアウトは `504 UPSTREAM_TIMEOUT`。
+
+        ### 時間上限
+
+        - Bedrock の星・検索語選出は15秒、API全体は25秒、フロント待機は30秒。
+        - 各上限にはSDK内の待ち時間を含め、各処理にはその段階上限と全体の残り時間の
+          短い方を適用する。AI処理が15秒を超えた場合と全体の期限に達した場合は
+          `504 UPSTREAM_TIMEOUT` とし、応答のための時間を残して打ち切る。
+        - これらは設計値であり、実測値ではない。
+
+        ### 入力検証の担当
+
+        API Gateway HTTP API は、インポートした OpenAPI の requestBody / schema を
+        入力検証には使わない。そのため、JSON の構文だけでなく、型・必須・enum・件数・
+        意味条件を含むリクエストの検証はすべて Lambda で行う。
+        参考: https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-open-api.html
+
+        - 本文が JSON として解釈できない場合は `400` と `INVALID_JSON`。
+        - JSON として解釈できるが、型・形状・必須・enum・件数が不正な場合は
+          `422` と `VALIDATION_ERROR`。`details` に `INVALID_REQUEST_SHAPE` や
+          `ANSWERS_COUNT_OUT_OF_RANGE` などを入れる。
+        - 未知の質問票の版は `422` と `UNSUPPORTED_QUESTIONNAIRE_VERSION`。
+        - 質問の組み合わせ・条件付き必須・排他などの意味条件も Lambda で検証し、
+          違反時は `422` と `VALIDATION_ERROR`。
+
+        今回の OpenAPI スキーマは、質問の組み合わせや条件付き必須、排他選択、
+        本文全体のバイト数を表現していない。これらはカタログと Lambda で検証する。
+        詳細は `x-validation-rules` を参照。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SeedRequest'
+            examples:
+              v1-normal:
+                summary: v1 通常回答（3問）
+                value:
+                  questionnaireVersion: onboarding-v1
+                  answers:
+                    - questionId: interest
+                      selectedOptionIds:
+                        - create
+                    - questionId: themes
+                      selectedOptionIds:
+                        - tec
+                        - mon
+                    - questionId: reading_experience
+                      selectedOptionIds:
+                        - new_perspective
+              v1-none:
+                summary: v1「特になし」でも3問のまま
+                value:
+                  questionnaireVersion: onboarding-v1
+                  answers:
+                    - questionId: interest
+                      selectedOptionIds:
+                        - none
+                    - questionId: themes
+                      selectedOptionIds:
+                        - omakase
+                    - questionId: reading_experience
+                      selectedOptionIds:
+                        - learn_knowledge
+              v2-curiosity:
+                summary: v2「特になし」＋追加質問
+                value:
+                  questionnaireVersion: onboarding-v2
+                  answers:
+                    - questionId: interest
+                      selectedOptionIds:
+                        - none
+                    - questionId: curiosity
+                      selectedOptionIds:
+                        - music_emotions
+                        - space_mysteries
+                    - questionId: themes
+                      selectedOptionIds:
+                        - omakase
+                    - questionId: reading_experience
+                      selectedOptionIds:
+                        - learn_knowledge
+              v2-no-curiosity:
+                summary: v2「特になし」以外（curiosity を送らない）
+                value:
+                  questionnaireVersion: onboarding-v2
+                  answers:
+                    - questionId: interest
+                      selectedOptionIds:
+                        - explore_unknown
+                    - questionId: themes
+                      selectedOptionIds:
+                        - lit
+                        - art
+                    - questionId: reading_experience
+                      selectedOptionIds:
+                        - immerse_story
+      x-validation-rules:
+        - rule: JSONとして解釈できるが、型・形状・必須・enum・件数が不正。
+          schemaCoverage: partial
+          note: 型・必須・enum・件数の一部はスキーマに記述しているが、API Gateway HTTP API はインポートした requestBody / schema で入力検証しない。Lambda で検証し、422 VALIDATION_ERROR を返す。
+        - rule: 同じ questionId を重複して送らない。
+          schemaCoverage: partial
+          note: uniqueItems は同一オブジェクトの重複だけを検出し、questionId の重複は検出しない。Lambda で検証する。
+        - rule: answers は版ごとの必須質問をすべて含む。
+          schemaCoverage: none
+          note: oneOf と maxItems は質問の組み合わせを保証しない。Lambda で検証する。
+        - rule: onboarding-v1 では curiosity を送らない。
+          schemaCoverage: partial
+          note: v1 の answers は curiosity のスキーマを含まないため oneOf で不一致になるが、エラーコードの判定は Lambda が行う。
+        - rule: onboarding-v2 では interest=none のときだけ curiosity を1〜3個送る。
+          schemaCoverage: none
+          note: 条件付き必須・条件付き禁止は今回のスキーマでは表現せず、カタログを使ってLambdaで検証する。
+        - rule: themes で omakase を選ぶ場合は、他のテーマを同時に選ばない。
+          schemaCoverage: none
+          note: 排他選択は今回のスキーマでは表現せず、カタログを使ってLambdaで検証する。
+        - rule: 本文に themeId を含めない。
+          schemaCoverage: full
+          note: additionalProperties false と required に themeId がないことで表現する。含めた場合は 422 VALIDATION_ERROR。
+        - rule: 本文は最大8 KiB。
+          schemaCoverage: none
+          note: 本文全体のバイト数はスキーマでは表現しない。Lambdaが受信時のバイト数で検証する。
+        - rule: 返す星は大ジャンルの9IDから異なる3個、検索語はtrim後1〜128文字。
+          schemaCoverage: partial
+          note: 件数と大ジャンルenumはスキーマで表現する。重複IDとtrim後空はLambdaで検証し、不正なら502 DISCOVERY_UPSTREAM_ERROR。
+      x-validation-error-codes:
+        - INVALID_REQUEST_SHAPE
+        - ANSWERS_COUNT_OUT_OF_RANGE
+        - UNSUPPORTED_QUESTIONNAIRE_VERSION
+        - UNKNOWN_QUESTION_ID
+        - DUPLICATE_QUESTION_ID
+        - EMPTY_SELECTION
+        - DUPLICATE_OPTION_ID
+        - UNKNOWN_OPTION_ID
+        - SELECTION_COUNT_OUT_OF_RANGE
+        - EXCLUSIVE_OPTION_CONFLICT
+        - MISSING_REQUIRED_QUESTION
+        - FORBIDDEN_QUESTION
+      x-invalid-request-examples:
+        - name: seed-with-theme-id
+          summary: seed本文にthemeIdを含める
+          expectError: INVALID_REQUEST_SHAPE
+          value:
+            themeId: tec
+            questionnaireVersion: onboarding-v1
+            answers:
+              - questionId: interest
+                selectedOptionIds:
+                  - none
+              - questionId: themes
+                selectedOptionIds:
+                  - omakase
+              - questionId: reading_experience
+                selectedOptionIds:
+                  - new_perspective
+        - name: unknown-option
+          summary: 存在しない選択肢ID
+          expectError: UNKNOWN_OPTION_ID
+          value:
+            questionnaireVersion: onboarding-v1
+            answers:
+              - questionId: interest
+                selectedOptionIds:
+                  - unknown_option
+              - questionId: themes
+                selectedOptionIds:
+                  - phi
+              - questionId: reading_experience
+                selectedOptionIds:
+                  - new_perspective
+        - name: v1-with-curiosity
+          summary: v1 に v2 の追加質問を混ぜる
+          expectError: UNKNOWN_QUESTION_ID
+          value:
+            questionnaireVersion: onboarding-v1
+            answers:
+              - questionId: interest
+                selectedOptionIds:
+                  - none
+              - questionId: curiosity
+                selectedOptionIds:
+                  - music_emotions
+              - questionId: themes
+                selectedOptionIds:
+                  - omakase
+              - questionId: reading_experience
+                selectedOptionIds:
+                  - new_perspective
+        - name: v2-missing-curiosity
+          summary: v2 で interest=none なのに curiosity がない
+          expectError: MISSING_REQUIRED_QUESTION
+          value:
+            questionnaireVersion: onboarding-v2
+            answers:
+              - questionId: interest
+                selectedOptionIds:
+                  - none
+              - questionId: themes
+                selectedOptionIds:
+                  - omakase
+              - questionId: reading_experience
+                selectedOptionIds:
+                  - new_perspective
+        - name: v2-curiosity-without-none
+          summary: v2 で interest が none 以外なのに curiosity を送る
+          expectError: FORBIDDEN_QUESTION
+          value:
+            questionnaireVersion: onboarding-v2
+            answers:
+              - questionId: interest
+                selectedOptionIds:
+                  - explore_unknown
+              - questionId: curiosity
+                selectedOptionIds:
+                  - city_origins
+              - questionId: themes
+                selectedOptionIds:
+                  - lit
+              - questionId: reading_experience
+                selectedOptionIds:
+                  - immerse_story
+        - name: omakase-conflict
+          summary: omakase と個別テーマの同時選択
+          expectError: EXCLUSIVE_OPTION_CONFLICT
+          value:
+            questionnaireVersion: onboarding-v1
+            answers:
+              - questionId: interest
+                selectedOptionIds:
+                  - create
+              - questionId: themes
+                selectedOptionIds:
+                  - omakase
+                  - tec
+              - questionId: reading_experience
+                selectedOptionIds:
+                  - new_perspective
+        - name: duplicate-question
+          summary: 同じ questionId の重複
+          expectError: DUPLICATE_QUESTION_ID
+          value:
+            questionnaireVersion: onboarding-v1
+            answers:
+              - questionId: interest
+                selectedOptionIds:
+                  - create
+              - questionId: interest
+                selectedOptionIds:
+                  - think_deeply
+              - questionId: themes
+                selectedOptionIds:
+                  - phi
+        - name: empty-selection
+          summary: 未回答を表す空配列
+          expectError: EMPTY_SELECTION
+          value:
+            questionnaireVersion: onboarding-v1
+            answers:
+              - questionId: interest
+                selectedOptionIds: []
+              - questionId: themes
+                selectedOptionIds:
+                  - phi
+              - questionId: reading_experience
+                selectedOptionIds:
+                  - new_perspective
+        - name: too-many-reading-options
+          summary: 単一選択の質問に2つ選ぶ
+          expectError: SELECTION_COUNT_OUT_OF_RANGE
+          value:
+            questionnaireVersion: onboarding-v1
+            answers:
+              - questionId: interest
+                selectedOptionIds:
+                  - create
+              - questionId: themes
+                selectedOptionIds:
+                  - phi
+              - questionId: reading_experience
+                selectedOptionIds:
+                  - new_perspective
+                  - deepen_thought
+        - name: malformed-shape
+          summary: answers が配列でない
+          expectError: INVALID_REQUEST_SHAPE
+          value:
+            questionnaireVersion: onboarding-v1
+            answers: {}
+      responses:
+        '200':
+          description: |
+            最初に表示する星のおすすめ順リスト。配列の先頭を初期選択にする。
+            `themeId` の名称・座標・色は共有カタログ/フロントで解決する。
+          headers:
+            Cache-Control:
+              description: 推薦結果を共有キャッシュに保存させないため、常に `no-store`。
+              schema:
+                type: string
+                enum:
+                  - no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeedResponse'
+              examples:
+                success:
+                  summary: 大ジャンル3個と検索語（おすすめ順）
+                  value:
+                    requestId: example-seed-001
+                    themes:
+                      - themeId: tec
+                        searchQuery: プログラミング ものづくり 入門
+                      - themeId: mon
+                        searchQuery: デザイン 発想 入門
+                      - themeId: phi
+                        searchQuery: 哲学 新しい視点 入門
+        '400':
+          description: 本文をJSONとして解釈できない。JSONとして解釈できる入力の不正は `422` で返す。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid-json:
+                  summary: 不正なJSON
+                  value:
+                    requestId: example-request-101
+                    error:
+                      code: INVALID_JSON
+                      message: リクエストの形式を確認してください。
+                      details: []
+        '413':
+          description: 本文が8 KiBを超えている。Lambdaが受信時のバイト数で判定する。JSON Schemaの`maxLength`では本文全体のバイト数を表さない。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                payload-too-large:
+                  summary: 本文が大きすぎる
+                  value:
+                    requestId: example-request-102
+                    error:
+                      code: PAYLOAD_TOO_LARGE
+                      message: 送信できるデータの大きさを超えています。
+                      details: []
+        '415':
+          description: '`Content-Type` が `application/json` ではない。'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                unsupported-media-type:
+                  summary: 未対応のメディアタイプ
+                  value:
+                    requestId: example-request-103
+                    error:
+                      code: UNSUPPORTED_MEDIA_TYPE
+                      message: JSON形式で送信してください。
+                      details: []
+        '422':
+          description: |
+            JSONとして解釈できるが、次のいずれかに該当する。
+            - 型・形状・必須・enum・件数が不正（`VALIDATION_ERROR`、`details` に `INVALID_REQUEST_SHAPE` や `ANSWERS_COUNT_OUT_OF_RANGE` など）
+            - 質問ID・選択肢ID・質問の組み合わせ・必須条件が不正（`VALIDATION_ERROR`、`details` に入力箇所）
+            - `themeId` を含めている（`VALIDATION_ERROR`）
+            - 質問票の版が未対応（`UNSUPPORTED_QUESTIONNAIRE_VERSION`）
+            不正な入力では外部サービスを呼ばない。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validation-error:
+                  summary: omakase と個別テーマの同時選択
+                  value:
+                    requestId: example-request-104
+                    error:
+                      code: VALIDATION_ERROR
+                      message: 回答内容を確認してください。
+                      details:
+                        - field: answers[1].selectedOptionIds
+                          code: EXCLUSIVE_OPTION_CONFLICT
+                unsupported-version:
+                  summary: 未対応の質問票の版
+                  value:
+                    requestId: example-request-105
+                    error:
+                      code: UNSUPPORTED_QUESTIONNAIRE_VERSION
+                      message: 対応していない質問票の版です。
+                      details:
+                        - field: questionnaireVersion
+                          code: UNSUPPORTED_QUESTIONNAIRE_VERSION
+                invalid-shape:
+                  summary: JSONとして解釈できるが、形状・件数が不正
+                  value:
+                    requestId: example-request-110
+                    error:
+                      code: VALIDATION_ERROR
+                      message: 回答内容を確認してください。
+                      details:
+                        - field: answers
+                          code: ANSWERS_COUNT_OUT_OF_RANGE
+        '429':
+          description: |
+            リクエスト過多。API Gateway のスロットリングなどが返す場合があり、
+            その応答はこの共通JSON形式ではないことがある（HTMLやプレーンテキストを含む）。
+            フロントはHTTPステータスでも扱えるようにする。連打せず時間をおいて再試行する。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                rate-limited:
+                  summary: アプリケーションが返す場合
+                  value:
+                    requestId: example-request-106
+                    error:
+                      code: RATE_LIMITED
+                      message: 時間をおいて再度お試しください。
+                      details: []
+        '500':
+          description: 想定外の内部エラー。秘密情報や内部例外は本文に含めない。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                internal-error:
+                  summary: 内部エラー
+                  value:
+                    requestId: example-request-107
+                    error:
+                      code: INTERNAL_ERROR
+                      message: 処理に失敗しました。
+                      details: []
+        '502':
+          description: |
+            Bedrock が未定義の星ID・重複ID・不正な検索語・不正な件数を返した。
+            不正な結果を画面へ流さず、フロントの点数方式への隠れたフォールバックもしない。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                discovery-upstream-error:
+                  summary: 星の選出結果が不正
+                  value:
+                    requestId: example-request-108
+                    error:
+                      code: DISCOVERY_UPSTREAM_ERROR
+                      message: 星の候補を取得できませんでした。
+                      details: []
+        '503':
+          description: |
+            Bedrock が停止している、またはスロットリングされた。フロントは再試行を案内する。
+            アプリケーションとして返す `503` は seed のみであり、
+            `GET /v1/themes/{themeId}/books` は `503` を返さない。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                discovery-unavailable:
+                  summary: AIによる星の選出が一時的に利用できない
+                  value:
+                    requestId: example-request-111
+                    error:
+                      code: DISCOVERY_UNAVAILABLE
+                      message: 星の候補を取得できませんでした。時間をおいて再度お試しください。
+                      details: []
+        '504':
+          description: |
+            AI処理の15秒上限、またはAPI全体の25秒期限に達した。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                upstream-timeout:
+                  summary: 上流のタイムアウト
+                  value:
+                    requestId: example-request-109
+                    error:
+                      code: UPSTREAM_TIMEOUT
+                      message: 時間内に星の候補を取得できませんでした。
+                      details: []
+  /v1/themes/{themeId}/books:
+    get:
+      tags:
+        - books
+      operationId: listThemeBooks
+      summary: 選んだ星の関連書籍と個別のおすすめ理由を取得する
+      description: |
+        選んだ星の `themeId` と、seed で受け取った検索語 `q` で Google Books を検索し、
+        最大5冊を返す。個別のおすすめ理由には質問票の回答を使うため、
+        回答を `X-Discovery-Context` ヘッダーへ JSON 文字列として送る。
+
+        この API サーバーは未実装である。Swagger UI の Try it out は無効化している。
+        **GET 本文は使わない。** 回答全文を URL やログへ載せない。URL に載せる回答由来の値は `q` だけ。
+
+        ### 受理条件
+
+        - path の `themeId` は `contracts/themes.json` の15IDのいずれか。
+        - `q` は必須。seed から受け取った `searchQuery` を指定する。trim 後空不可、
+          128文字以内。子ジャンルなど seed に含まれない星を探索するときは、
+          カタログの基本検索語を `q` に指定できる。
+        - `X-Discovery-Context` は必須。`JSON.stringify({ questionnaireVersion, answers })`
+          の ASCII JSON 文字列で、最大 4 KiB。解析後のオブジェクトは seed 本文
+          （`SeedRequest`）と同じ型・同じ版別回答条件で検証する。
+        - ヘッダーは認証トークンでも署名済みデータでもない。seed を呼んだ事実の証明として
+          扱わず、リクエストごとに検証する。セッションも発行しない。
+        - 検索語の AI 生成は seed で済ませ、GET では再生成しない。
+
+        ### 処理とエラー
+
+        - Google Books 検索は `q` をそのまま使い、`langRestrict=ja`・`printType=books`・
+          `orderBy=relevance`・`maxResults=10` を指定する。
+        - volume ID の重複と、IDまたは書名がない候補を除き、検索結果の順で最大5冊を選ぶ。
+          ISBN単位の版違い統合は行わない。5冊を埋めるための無関係な検索はしない。
+        - 内容紹介が空でない本だけを対象に、候補をまとめて Bedrock で個別の理由を1回生成する。
+          内容紹介のない本だけ、または候補0件のときは Bedrock を呼ばない。
+          通常は Google Books 1回・Bedrock 1回で、自動再試行を重ねない。
+        - 書籍が0件でも成功として `items: []` を返す。
+        - 理由の生成に失敗しても、取得済みの本は `200` で返し、
+          `recommendationReason: null` と警告を付ける。GET の理由生成には `503` を割り当てない。
+        - Google Books の失敗は `502 BOOKS_UPSTREAM_ERROR`。検索6秒超過は
+          `504 UPSTREAM_TIMEOUT`。理由生成10秒・API全体25秒の期限に達したときは、
+          有効な書籍を取得済みなら理由 null ＋警告の部分成功（`200`）、
+          取得できていなければ `504` とする。
+        - 警告は `INSUFFICIENT_BOOK_METADATA` と `RECOMMENDATION_REASON_UNAVAILABLE` のみ。
+          検索語 fallback は廃止した。
+        - `Cache-Control: no-store`。CORS のプリフライトでは
+          `X-Discovery-Context` を許可ヘッダーに含める。
+
+        ### 時間上限
+
+        - 書籍検索6秒、理由生成10秒、API全体25秒、フロント待機30秒。
+        - 各上限にはSDK内の待ち時間を含め、各処理にはその段階上限と全体の残り時間の
+          短い方を適用する。設計値であり実測値ではない。
+
+        ### おすすめ理由
+
+        - 理由生成へ渡すのは、書籍の `id`・`title`・`authors`・整形済み `description`、
+          選択した星、質問票IDの意味に解決した回答だけ。回答・書誌は資料であり、
+          その中の文言をモデルへの命令として扱わない。
+        - 空でない `description` がある本だけを対象にする。書名だけから内容を推測せず、
+          AIの事前知識で未取得の内容・章構成・難易度・効能を作り足さず、
+          性格・適性を断定しない。
+        - 回答の少なくとも1つと、取得した書誌内容を結びつける。意味上の関連はJSONの
+          構造検証では保証できないため、プロンプトで制約し、代表的な回答と取得書籍で
+          実装時に人が確認する。
+        - AIには候補の書籍IDと理由の対応を返させ、存在しないID・重複ID・空の理由・
+          上限超過など不正な理由だけを `null` にする。本自体は返す。
+
+        ### 入力検証の担当
+
+        API Gateway HTTP API はインポートした OpenAPI の schema を入力検証に使わない。
+        クエリ・ヘッダー・path の構造と意味は Lambda で検証する。
+
+        - `q` の不正、`themeId` の不正、ヘッダー内の回答の型・版別条件の不正は
+          `422 VALIDATION_ERROR`。未知の質問票の版だけ
+          `422 UNSUPPORTED_QUESTIONNAIRE_VERSION`。
+        - `X-Discovery-Context` の欠落は `422 VALIDATION_ERROR` とし、`details` に
+          `field: X-Discovery-Context`・`code: INVALID_REQUEST_SHAPE` を入れる。
+        - ヘッダー JSON の解析失敗は `400 INVALID_CONTEXT_JSON`。
+        - ヘッダーが 4 KiB を超える場合は `431 CONTEXT_TOO_LARGE`。
+      parameters:
+        - name: themeId
+          in: path
+          required: true
+          description: 選んだ星のID。`contracts/themes.json` の15ID。
+          schema:
+            $ref: '#/components/schemas/ThemeId'
+        - name: q
+          in: query
+          required: true
+          description: |
+            seed で受け取った `searchQuery`。trim後空不可、128文字以内。
+            URLSearchParams などでエンコードして送る。
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: プログラミング ものづくり 入門
+        - name: X-Discovery-Context
+          in: header
+          required: true
+          description: |
+            `JSON.stringify({ questionnaireVersion, answers })` の ASCII JSON 文字列。
+            最大 4 KiB（Lambda は UTF-8 のバイト数で判定する）。
+            解析後のオブジェクトは seed 本文（`SeedRequest`）と同じ型・同じ版別回答条件で
+            検証する。認証トークンではなく、署名・暗号・セッションで保護された値でもない。
+            サーバーは seed を呼んだ事実の証明として扱わず、毎回解析して検証する。
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 4096
+          x-parsed-schema: '#/components/schemas/SeedRequest'
+          x-max-bytes: 4096
+          examples:
+            v1-normal:
+              summary: v1 通常回答（3問）
+              value: '{"questionnaireVersion":"onboarding-v1","answers":[{"questionId":"interest","selectedOptionIds":["create"]},{"questionId":"themes","selectedOptionIds":["tec","mon"]},{"questionId":"reading_experience","selectedOptionIds":["new_perspective"]}]}'
+            v1-none:
+              summary: v1「特になし」でも3問のまま
+              value: '{"questionnaireVersion":"onboarding-v1","answers":[{"questionId":"interest","selectedOptionIds":["none"]},{"questionId":"themes","selectedOptionIds":["omakase"]},{"questionId":"reading_experience","selectedOptionIds":["learn_knowledge"]}]}'
+            v2-curiosity:
+              summary: v2「特になし」＋追加質問
+              value: '{"questionnaireVersion":"onboarding-v2","answers":[{"questionId":"interest","selectedOptionIds":["none"]},{"questionId":"curiosity","selectedOptionIds":["music_emotions","space_mysteries"]},{"questionId":"themes","selectedOptionIds":["omakase"]},{"questionId":"reading_experience","selectedOptionIds":["learn_knowledge"]}]}'
+            v2-no-curiosity:
+              summary: v2「特になし」以外（curiosity を送らない）
+              value: '{"questionnaireVersion":"onboarding-v2","answers":[{"questionId":"interest","selectedOptionIds":["explore_unknown"]},{"questionId":"themes","selectedOptionIds":["lit","art"]},{"questionId":"reading_experience","selectedOptionIds":["immerse_story"]}]}'
+      responses:
+        '200':
+          description: |
+            推薦結果。書籍が0件でも成功として `items: []` を返す。
+            理由の生成に失敗した場合や根拠が不足する場合は、該当書籍の
+            `recommendationReason` を `null` にし、`warnings` に理由を入れて本自体は返す。
+            返された順に表示する。
+          headers:
+            Cache-Control:
+              description: 推薦結果を共有キャッシュに保存させないため、常に `no-store`。
+              schema:
+                type: string
+                enum:
+                  - no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+              examples:
+                success:
+                  summary: 正常（理由あり）
+                  value:
+                    requestId: example-request-001
+                    themeId: tec
+                    items:
+                      - id: example-volume-001
+                        source: google_books
+                        title: はじめてのプログラミングと発想
+                        authors:
+                          - サンプル著者
+                        coverUrl: https://books.example.invalid/covers/example-volume-001.jpg
+                        description: 身近な題材を使って、プログラムを作る考え方を紹介する入門書です。
+                        recommendationReason: 「何かをつくってみたい」を選んだあなたに、身近な題材から制作を始めるきっかけとしておすすめします。技術を使ったものづくりの見方に触れられる一冊です。
+                        infoUrl: https://books.google.com/books?id=example-volume-001
+                    warnings: []
+                zero-results:
+                  summary: 検索が正常に終わり0件
+                  value:
+                    requestId: example-request-002
+                    themeId: lan
+                    items: []
+                    warnings: []
+                reason-unavailable:
+                  summary: 理由生成に失敗（本は返す）
+                  value:
+                    requestId: example-request-003
+                    themeId: tec
+                    items:
+                      - id: example-volume-002
+                        source: google_books
+                        title: つくるための設計ノート
+                        authors: []
+                        coverUrl: null
+                        description: 設計の考え方を、身近な例とともに整理した一冊です。
+                        recommendationReason: null
+                        infoUrl: null
+                    warnings:
+                      - code: RECOMMENDATION_REASON_UNAVAILABLE
+                        message: 一部の本のおすすめ理由を取得できませんでした。
+                insufficient-metadata:
+                  summary: 紹介文がなく理由の根拠が不足（本は返す）
+                  value:
+                    requestId: example-request-004
+                    themeId: mon
+                    items:
+                      - id: example-volume-003
+                        source: google_books
+                        title: 考えるための手引き
+                        authors:
+                          - サンプル著者
+                        coverUrl: null
+                        description: null
+                        recommendationReason: null
+                        infoUrl: https://books.google.com/books?id=example-volume-003
+                    warnings:
+                      - code: INSUFFICIENT_BOOK_METADATA
+                        message: 内容紹介がないため、おすすめ理由を作成できませんでした。
+        '400':
+          description: |
+            `X-Discovery-Context` を JSON として解析できない。
+            JSON として解析できる入力の不正は `422` で返す。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid-context-json:
+                  summary: ヘッダーのJSONが壊れている
+                  value:
+                    requestId: example-request-121
+                    error:
+                      code: INVALID_CONTEXT_JSON
+                      message: リクエストの形式を確認してください。
+                      details: []
+        '422':
+          description: |
+            `q`・`themeId`・ヘッダー内の回答のいずれかが不正。
+            - `q` が空、128文字超、または欠落（`VALIDATION_ERROR`）
+            - `themeId` が15星にない（`VALIDATION_ERROR`、`details` に
+              `field: themeId`・`code: UNKNOWN_THEME_ID`）
+            - `X-Discovery-Context` が欠落（`VALIDATION_ERROR`、`details` に
+              `field: X-Discovery-Context`・`code: INVALID_REQUEST_SHAPE`）
+            - 回答の型・形状・必須・enum・件数・質問の組み合わせが不正
+              （`VALIDATION_ERROR`、`details` に入力箇所）
+            - 質問票の版が未対応（`UNSUPPORTED_QUESTIONNAIRE_VERSION`）
+            不正な入力では外部サービスを呼ばない。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validation-error:
+                  summary: ヘッダー内の回答が不正
+                  value:
+                    requestId: example-request-122
+                    error:
+                      code: VALIDATION_ERROR
+                      message: リクエスト内容を確認してください。
+                      details:
+                        - field: X-Discovery-Context.answers[1].selectedOptionIds
+                          code: EXCLUSIVE_OPTION_CONFLICT
+                invalid-query:
+                  summary: q が空
+                  value:
+                    requestId: example-request-123
+                    error:
+                      code: VALIDATION_ERROR
+                      message: 検索語を確認してください。
+                      details:
+                        - field: q
+                          code: INVALID_REQUEST_SHAPE
+                missing-context:
+                  summary: X-Discovery-Context が欠落
+                  value:
+                    requestId: example-request-130
+                    error:
+                      code: VALIDATION_ERROR
+                      message: リクエスト内容を確認してください。
+                      details:
+                        - field: X-Discovery-Context
+                          code: INVALID_REQUEST_SHAPE
+                unknown-theme:
+                  summary: themeId が15星にない
+                  value:
+                    requestId: example-request-131
+                    error:
+                      code: VALIDATION_ERROR
+                      message: 星の指定を確認してください。
+                      details:
+                        - field: themeId
+                          code: UNKNOWN_THEME_ID
+                unsupported-version:
+                  summary: 未対応の質問票の版
+                  value:
+                    requestId: example-request-124
+                    error:
+                      code: UNSUPPORTED_QUESTIONNAIRE_VERSION
+                      message: 対応していない質問票の版です。
+                      details:
+                        - field: X-Discovery-Context.questionnaireVersion
+                          code: UNSUPPORTED_QUESTIONNAIRE_VERSION
+        '429':
+          description: |
+            リクエスト過多。API Gateway のスロットリングなどが返す場合があり、
+            その応答はこの共通JSON形式ではないことがある。連打せず時間をおいて再試行する。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                rate-limited:
+                  summary: アプリケーションが返す場合
+                  value:
+                    requestId: example-request-125
+                    error:
+                      code: RATE_LIMITED
+                      message: 時間をおいて再度お試しください。
+                      details: []
+        '431':
+          description: |
+            `X-Discovery-Context` が 4 KiB を超えている。Lambda が受信時の
+            ヘッダーサイズで判定する。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                context-too-large:
+                  summary: 回答ヘッダーが大きすぎる
+                  value:
+                    requestId: example-request-126
+                    error:
+                      code: CONTEXT_TOO_LARGE
+                      message: 送信できる回答データの大きさを超えています。
+                      details: []
+        '500':
+          description: 想定外の内部エラー。秘密情報や内部例外は本文に含めない。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                internal-error:
+                  summary: 内部エラー
+                  value:
+                    requestId: example-request-127
+                    error:
+                      code: INTERNAL_ERROR
+                      message: 処理に失敗しました。
+                      details: []
+        '502':
+          description: Google Books が失敗した、または不正な結果を返した。0件扱いにしない。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                books-upstream-error:
+                  summary: 書籍検索の失敗
+                  value:
+                    requestId: example-request-128
+                    error:
+                      code: BOOKS_UPSTREAM_ERROR
+                      message: 書籍情報を取得できませんでした。
+                      details: []
+        '504':
+          description: |
+            書籍検索の6秒上限に達した、または書籍を取得する前にAPI全体の25秒期限へ到達した。
+            有効な書籍を取得済みなら `200` の部分成功を返し、取得できていなければ `504` を返す。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                upstream-timeout:
+                  summary: 上流のタイムアウト
+                  value:
+                    requestId: example-request-129
+                    error:
+                      code: UPSTREAM_TIMEOUT
+                      message: 時間内に書籍情報を取得できませんでした。
+                      details: []
+  /health:
+    get:
+      tags:
+        - health
+      operationId: getHealth
+      summary: APIの稼働確認
+      description: |
+        プロセスが応答できるかを確認する。Google Books や Bedrock の利用可否までは保証しない。
+        この API サーバーは未実装である。
+      responses:
+        '200':
+          description: APIが応答できる。
+          headers:
+            Cache-Control:
+              description: 稼働確認の結果を共有キャッシュに保存させない。
+              schema:
+                type: string
+                enum:
+                  - no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                ok:
+                  summary: 正常
+                  value:
+                    status: ok
+                    requestId: example-health-001
+        '500':
+          description: 想定外の内部エラー。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                internal-error:
+                  summary: 内部エラー
+                  value:
+                    requestId: example-health-002
+                    error:
+                      code: INTERNAL_ERROR
+                      message: 処理に失敗しました。
+                      details: []
+components:
+  schemas:
+    ThemeId:
+      type: string
+      description: |
+        選んだ星のID。`contracts/themes.json` の `id` と一致する。
+        大ジャンル9件・中ジャンル6件の計15件。回答で選ばなかった星も指定できる。
+        座標・色・明るさはフロントの表示関心事であり、この契約には含めない。
+      enum:
+        - phi
+        - his
+        - soc
+        - sci
+        - tec
+        - mon
+        - art
+        - lan
+        - lit
+        - phi-ethics
+        - phi-intro
+        - tec-prog
+        - tec-sec
+        - mon-design
+        - mon-think
+    Level1ThemeId:
+      type: string
+      description: |
+        seed が返す星のID。`contracts/themes.json` のうち `parentId` が `null` の
+        大ジャンル9件に限る。中ジャンルは seed の選出対象外である。
+      enum:
+        - phi
+        - his
+        - soc
+        - sci
+        - tec
+        - mon
+        - art
+        - lan
+        - lit
+    SeedRequest:
+      description: |
+        星の選出リクエスト。`questionnaireVersion` によって v1 と v2 の形を切り替える。
+        各版の必須質問・分岐条件は `contracts/questionnaires/<version>.json` を正本とする。
+        `themeId` は含めない。
+      oneOf:
+        - $ref: '#/components/schemas/SeedRequestV1'
+        - $ref: '#/components/schemas/SeedRequestV2'
+    SeedRequestV1:
+      type: object
+      additionalProperties: false
+      required:
+        - questionnaireVersion
+        - answers
+      x-contract-questionnaire-version: onboarding-v1
+      description: |
+        `onboarding-v1` のリクエスト。`interest`・`themes`・`reading_experience` の
+        3問を必ず含み、`curiosity` は含まない。`themeId` は含めない。
+      properties:
+        questionnaireVersion:
+          type: string
+          enum:
+            - onboarding-v1
+        answers:
+          type: array
+          description: |
+            実際に回答した質問。v1 は3問が必須のため3件。表示しなかった質問は送らない。
+            配列の順序は意味を持たない。同じ `questionId` の重複は Lambda で拒否する。
+          minItems: 3
+          maxItems: 3
+          uniqueItems: true
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/AnswerInterest'
+              - $ref: '#/components/schemas/AnswerThemes'
+              - $ref: '#/components/schemas/AnswerReadingExperience'
+    SeedRequestV2:
+      type: object
+      additionalProperties: false
+      required:
+        - questionnaireVersion
+        - answers
+      x-contract-questionnaire-version: onboarding-v2
+      description: |
+        `onboarding-v2` のリクエスト。3問に加え、`interest` が `none` のときだけ
+        `curiosity` を1〜3個含む。`interest` が `none` 以外のときは `curiosity` を
+        含まない。この条件付き必須・禁止は今回のスキーマでは表現せず、
+        カタログを使ってLambdaで検証する。`themeId` は含めない。
+      properties:
+        questionnaireVersion:
+          type: string
+          enum:
+            - onboarding-v2
+        answers:
+          type: array
+          description: |
+            実際に回答した質問。`interest`・`themes`・`reading_experience` は必須。
+            `curiosity` は `interest=none` のときだけ1〜3個を追加する。
+            配列の順序は意味を持たない。同じ `questionId` の重複は Lambda で拒否する。
+          minItems: 3
+          maxItems: 4
+          uniqueItems: true
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/AnswerInterest'
+              - $ref: '#/components/schemas/AnswerCuriosity'
+              - $ref: '#/components/schemas/AnswerThemes'
+              - $ref: '#/components/schemas/AnswerReadingExperience'
+    AnswerInterest:
+      type: object
+      additionalProperties: false
+      required:
+        - questionId
+        - selectedOptionIds
+      x-contract-question-id: interest
+      description: 1問目「いま、どんなことにちょっと興味がある？」。単一選択。
+      properties:
+        questionId:
+          type: string
+          enum:
+            - interest
+        selectedOptionIds:
+          type: array
+          minItems: 1
+          maxItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - create
+              - think_deeply
+              - explore_unknown
+              - people_society
+              - none
+    AnswerCuriosity:
+      type: object
+      additionalProperties: false
+      required:
+        - questionId
+        - selectedOptionIds
+      x-contract-question-id: curiosity
+      description: |
+        v2 の追加質問。`interest=none` のときだけ送り、1〜3個を選ぶ。
+        `interest` が `none` 以外のときは送らない。
+      properties:
+        questionId:
+          type: string
+          enum:
+            - curiosity
+        selectedOptionIds:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - music_emotions
+              - space_mysteries
+              - city_origins
+    AnswerThemes:
+      type: object
+      additionalProperties: false
+      required:
+        - questionId
+        - selectedOptionIds
+      x-contract-question-id: themes
+      description: |
+        2問目「気になるテーマをいくつか選んでみてください」。大ジャンルを1〜9個、
+        または `omakase` だけを選ぶ。`omakase` と個別テーマの同時選択は Lambda で拒否する。
+      properties:
+        questionId:
+          type: string
+          enum:
+            - themes
+        selectedOptionIds:
+          type: array
+          minItems: 1
+          maxItems: 9
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - phi
+              - his
+              - soc
+              - sci
+              - tec
+              - mon
+              - art
+              - lan
+              - lit
+              - omakase
+    AnswerReadingExperience:
+      type: object
+      additionalProperties: false
+      required:
+        - questionId
+        - selectedOptionIds
+      x-contract-question-id: reading_experience
+      description: 3問目「本を読むとき、どんな体験が好き？」。単一選択。
+      properties:
+        questionId:
+          type: string
+          enum:
+            - reading_experience
+        selectedOptionIds:
+          type: array
+          minItems: 1
+          maxItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - new_perspective
+              - learn_knowledge
+              - deepen_thought
+              - immerse_story
+    SeedResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - themes
+      description: |
+        星の選出結果。`themes` は必ず3件で、おすすめ順に並べる。
+        先頭の星をフロントが初期選択として表示する。
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+          description: 問い合わせ・ログ照合用。通常の画面には表示しない。
+        themes:
+          type: array
+          minItems: 3
+          maxItems: 3
+          description: |
+            大ジャンルの異なる3IDと検索語。重複IDは不正であり、
+            Lambda が `502 DISCOVERY_UPSTREAM_ERROR` として拒否する。
+          items:
+            $ref: '#/components/schemas/SeedTheme'
+    SeedTheme:
+      type: object
+      additionalProperties: false
+      required:
+        - themeId
+        - searchQuery
+      description: |
+        1つの星と、その星の書籍検索語。名称・座標・色は含めず、
+        共有カタログ/フロントで `themeId` から解決する。
+      properties:
+        themeId:
+          $ref: '#/components/schemas/Level1ThemeId'
+        searchQuery:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: |
+            Google Books の検索語。Lambda が AI の生出力を trim してから検証する。
+            応答値は前後空白なしで1〜128文字。trim 後に空なら不正とする。
+            画面はこの値を GET の `q` に渡す。
+    RecommendationResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - themeId
+        - items
+        - warnings
+      description: |
+        書籍推薦の成功レスポンス。項目は欠落させず、該当しない値は `null` または
+        空配列で返す。`items` は0〜5冊で、返された順に表示する。
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+          description: 問い合わせ・ログ照合用。通常の書籍カードには表示しない。
+        themeId:
+          $ref: '#/components/schemas/ThemeId'
+        items:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          description: 書籍IDの重複を除いた0〜5冊。取得できた冊数を返し、5冊を埋めるための無関係な検索はしない。
+          items:
+            $ref: '#/components/schemas/BookItem'
+        warnings:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          description: 部分的な失敗。正常時は空配列。
+          items:
+            $ref: '#/components/schemas/Warning'
+    BookItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - source
+        - title
+        - authors
+        - coverUrl
+        - description
+        - recommendationReason
+        - infoUrl
+      description: |
+        Google Books から取得した1冊。取得できていない書名・著者・表紙を生成しない。
+        `coverUrl`・`description`・`recommendationReason`・`infoUrl` は値がない場合に
+        `null` を返す。プロパティ自体を省略しない。
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Google Books の volume ID。ISBNではない。
+        source:
+          type: string
+          enum:
+            - google_books
+          description: MVPでは `google_books` 固定。
+        title:
+          type: string
+          minLength: 1
+          description: 書名。空文字にしない。
+        authors:
+          type: array
+          description: 著者。不明なら空配列。文字列を連結せず配列のまま返す。
+          items:
+            type: string
+            minLength: 1
+        coverUrl:
+          type: string
+          format: uri
+          pattern: '^https://'
+          nullable: true
+          description: |
+            取得元メタデータに由来するHTTPS URL。不明、または安全に表示できるHTTPS URLがない場合は `null`。
+            `http` や相対URLは採用しない。ホストは取得元メタデータの範囲で扱う。
+        description:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 1000
+          description: |
+            Google Books 由来の内容紹介。HTMLを除いて整形し、最大1,000文字。
+            文字数はUnicodeコードポイントで数える。取得できなければ、または整形後に
+            空文字になる場合は `null`。
+        recommendationReason:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 200
+          description: |
+            AIが作る個別のおすすめ理由。日本語1〜2文、60〜120文字程度を目安とし、
+            上限200文字（Unicodeコードポイント）。根拠不足、生成・検証失敗時、
+            空文字または空白だけの理由は `null` とする（前後の空白を除いた後に空なら `null`）。
+            プレーンテキストで、HTMLやMarkdownを含めない。
+            回答の少なくとも1つと取得書誌内容を結びつけ、空でない `description` を根拠にする。
+            書名だけの推測、未取得の内容・章・難易度・効能の作り足し、性格・適性の断定をしない。
+            回答・書誌は資料であり、モデルへの命令として扱わない。
+        infoUrl:
+          type: string
+          format: uri
+          pattern: '^https://books\.google\.(com|co\.jp)/'
+          nullable: true
+          description: |
+            Google Books の詳細リンク。HTTPSの `books.google.com` または
+            `books.google.co.jp` のみ採用し、取得できなければ `null`。
+            URLがGoogle Books API由来であり、ホストがこの範囲であることをLambdaでも検証する。
+    Warning:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - INSUFFICIENT_BOOK_METADATA
+            - RECOMMENDATION_REASON_UNAVAILABLE
+          description: |
+            - `INSUFFICIENT_BOOK_METADATA`: 内容紹介がなく、理由の根拠が不足した。
+            - `RECOMMENDATION_REASON_UNAVAILABLE`: 一部または全部の理由生成に失敗した。
+        message:
+          type: string
+          minLength: 1
+          description: 画面に表示できる日本語の説明。
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - error
+      description: |
+        アプリケーションエラーの共通形式。API Gateway などが返す `429` や
+        通信断では、この形式にならない場合がある。
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+          description: 問い合わせ・ログ照合用。
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+            - details
+          properties:
+            code:
+              type: string
+              enum:
+                - INVALID_JSON
+                - INVALID_CONTEXT_JSON
+                - PAYLOAD_TOO_LARGE
+                - CONTEXT_TOO_LARGE
+                - UNSUPPORTED_MEDIA_TYPE
+                - UNSUPPORTED_QUESTIONNAIRE_VERSION
+                - VALIDATION_ERROR
+                - RATE_LIMITED
+                - DISCOVERY_UPSTREAM_ERROR
+                - DISCOVERY_UNAVAILABLE
+                - BOOKS_UPSTREAM_ERROR
+                - UPSTREAM_TIMEOUT
+                - INTERNAL_ERROR
+              description: フロントの分岐に使うエラーコード。
+            message:
+              type: string
+              minLength: 1
+              description: 画面に表示できる日本語の説明。秘密情報や内部例外を含めない。
+            details:
+              type: array
+              description: 入力箇所を特定するための詳細。対象がなければ空配列。
+              items:
+                $ref: '#/components/schemas/ErrorDetail'
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - code
+      properties:
+        field:
+          type: string
+          minLength: 1
+          description: 対象の入力箇所。例：`answers[1].selectedOptionIds`。
+        code:
+          type: string
+          enum:
+            - INVALID_REQUEST_SHAPE
+            - ANSWERS_COUNT_OUT_OF_RANGE
+            - UNSUPPORTED_QUESTIONNAIRE_VERSION
+            - UNKNOWN_THEME_ID
+            - UNKNOWN_QUESTION_ID
+            - DUPLICATE_QUESTION_ID
+            - EMPTY_SELECTION
+            - DUPLICATE_OPTION_ID
+            - UNKNOWN_OPTION_ID
+            - SELECTION_COUNT_OUT_OF_RANGE
+            - EXCLUSIVE_OPTION_CONFLICT
+            - MISSING_REQUIRED_QUESTION
+            - FORBIDDEN_QUESTION
+          description: 入力不正の種類。`VALIDATION_ERROR` の内訳として返す。
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - requestId
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+          description: プロセスが応答できる状態。
+        requestId:
+          type: string
+          minLength: 1
+          description: 問い合わせ・ログ照合用。
