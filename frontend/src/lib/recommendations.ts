@@ -2,12 +2,12 @@ import type { Book, OnboardingAnswers, Scores, Tier } from '../types/hoshirube'
 import { GENRES, WORLDS } from '../data/worlds'
 import { BOOKS } from '../data/books'
 
-type Boost = Scores | 'all'
+type Boost = Scores | 'all' | 'none'
 const Q1_BOOST: Boost[] = [
   { mon: 2, tec: 2, art: 1 }, { phi: 2, sci: 1, his: 1 }, { lan: 1, sci: 1, art: 1, lit: 1 }, { soc: 2, his: 1, phi: 1 }, 'all',
 ]
 const Q3_BOOST: Boost[] = [
-  { phi: 1, soc: 1, art: 1 }, { sci: 1, his: 1, tec: 1 }, { phi: 2, soc: 1 }, { lit: 2, lan: 1, art: 1 },
+  { phi: 1, soc: 1, art: 1 }, { sci: 1, his: 1, tec: 1 }, { phi: 2, soc: 1 }, { lit: 2, lan: 1, art: 1 }, 'none',
 ]
 
 export const TIER_LABEL = ['まだ未知の領域', '少し気になる', '興味が強い'] as const
@@ -16,8 +16,10 @@ export const tierOf = (v: number): Tier => (v >= 3 ? 2 : v >= 1 ? 1 : 0)
 export function calcScores(a: OnboardingAnswers): Scores {
   const s: Scores = Object.fromEntries(GENRES.map((g) => [g.id, 0]))
   const genreIds = new Set(GENRES.map((g) => g.id))
-  const add = (m: Boost) =>
-    m === 'all' ? GENRES.forEach((g) => (s[g.id] += 0.5)) : Object.entries(m).forEach(([k, v]) => (s[k] += v))
+  const add = (m: Boost) => {
+    if (m === 'all') GENRES.forEach((g) => (s[g.id] += 0.5))
+    else if (m !== 'none') Object.entries(m).forEach(([k, v]) => (s[k] += v))
+  }
   const validQ1 = Number.isInteger(a.q1) && a.q1 !== null && a.q1 >= 0 && a.q1 < Q1_BOOST.length
   const validQ3 = Number.isInteger(a.q3) && a.q3 !== null && a.q3 >= 0 && a.q3 < Q3_BOOST.length
   if (validQ1) add(Q1_BOOST[a.q1!])
