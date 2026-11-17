@@ -5,7 +5,7 @@
 ## ドキュメント
 
 - [プロダクト・構成の企画書](hoshirube.md)
-- [バックエンドAPI仕様（確定版）](superpowers/specs/2026-11-16-backend-api-design.md)
+- [バックエンドAPI仕様（確定版）](backend-api.md)
 - [OpenAPI契約（正本）](openapi.yaml)
 - [星カタログ](../contracts/themes.json)
 - [質問票 onboarding-v1](../contracts/questionnaires/onboarding-v1.json)
@@ -103,7 +103,7 @@ docs/
   redocly.yaml                 Redocly lint設定
   scripts/check-contract.mjs   カタログと意味条件の静的検証
   hoshirube.md                 プロダクト・構成の企画書
-  superpowers/specs/           確定API仕様
+  backend-api.md                確定API仕様
 ```
 
 ## 実装状況

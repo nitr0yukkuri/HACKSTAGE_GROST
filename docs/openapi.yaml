@@ -25,7 +25,7 @@ info:
     - 送受信の構造と列挙値: この `openapi.yaml`
     - 星ID・名称・親子関係・基本検索語: `contracts/themes.json`
     - 質問・選択肢・選択数・分岐条件: `contracts/questionnaires/<version>.json`
-    - 意味上の制約と処理の説明: `docs/superpowers/specs/2026-11-16-backend-api-design.md`
+    - 意味上の制約と処理の説明: `docs/backend-api.md`
 
     JSON Schema（OpenAPI 3.0）で表せない条件は `description`・`x-validation-rules`・
     カタログに明記し、実装時の Lambda で検証する。このドキュメントの構造検証だけで

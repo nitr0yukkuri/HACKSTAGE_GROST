@@ -10,11 +10,11 @@
 
 関連ファイル：
 
-- 送受信契約の正本：[`docs/openapi.yaml`](../../openapi.yaml)（OpenAPI 3.0.3）
-- 星ID・名称・親子関係・基本検索語：[`contracts/themes.json`](../../../contracts/themes.json)
-- 質問票の正本：[`contracts/questionnaires/onboarding-v1.json`](../../../contracts/questionnaires/onboarding-v1.json)、[`onboarding-v2.json`](../../../contracts/questionnaires/onboarding-v2.json)
-- ローカルSwagger UI：[`docs/index.html`](../../index.html)
-- 静的検証：[`docs/scripts/check-contract.mjs`](../../scripts/check-contract.mjs)
+- 送受信契約の正本：[`docs/openapi.yaml`](openapi.yaml)（OpenAPI 3.0.3）
+- 星ID・名称・親子関係・基本検索語：[`contracts/themes.json`](../contracts/themes.json)
+- 質問票の正本：[`contracts/questionnaires/onboarding-v1.json`](../contracts/questionnaires/onboarding-v1.json)、[`onboarding-v2.json`](../contracts/questionnaires/onboarding-v2.json)
+- ローカルSwagger UI：[`docs/index.html`](index.html)
+- 静的検証：[`docs/scripts/check-contract.mjs`](scripts/check-contract.mjs)
 
 ## 1. 確定した仕様
 
