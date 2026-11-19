@@ -21,10 +21,11 @@ const CHILD: RGB = [0.7, 0.95, 1]
 
 /** WebGL2で星と星座線を描き、ラベル(button)をHTMLで重ねる。状態はpropsから受け取るだけ */
 export default function UniverseCanvas(props: Props) {
-  const { worlds, tiers, selectedId, onPick } = props
+  const { worlds, tiers, selectedId, panelOpen, onPick } = props
   const cv = useRef<HTMLCanvasElement>(null)
   const labels = useRef<Record<string, HTMLButtonElement | null>>({})
   const live = useRef(props)
+  const scheduleRender = useRef<() => void>(() => {})
   live.current = props
   const [noGl, setNoGl] = useState(false)
   const [glError, setGlError] = useState<string | null>(null)
@@ -43,20 +44,28 @@ export default function UniverseCanvas(props: Props) {
     const bg = Array.from({ length: 130 }, () => [Math.random(), Math.random(), 2 + Math.random() * 5, 0.25 + Math.random() * 0.5, Math.random()])
     const k: Record<string, number> = {}
     const view = { x: 0, y: 0, z: 1 }
-    const rm = matchMedia('(prefers-reduced-motion:reduce)').matches
+    const motionPreference = matchMedia('(prefers-reduced-motion: reduce)')
+    let reducedMotion = motionPreference.matches
     let raf = 0
+    let contextLost = false
+    let disposed = false
 
     const frame = (ms: number) => {
-      raf = requestAnimationFrame(frame)
+      raf = 0
+      if (document.hidden || contextLost || disposed) return
       const { worlds, tiers, selectedId, target, panelOpen } = live.current
       const dp = devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight
-      view.x += (target.x - view.x) * 0.09; view.y += (target.y - view.y) * 0.09; view.z += (target.z - view.z) * 0.09
+      if (reducedMotion) {
+        view.x = target.x; view.y = target.y; view.z = target.z
+      } else {
+        view.x += (target.x - view.x) * 0.09; view.y += (target.y - view.y) * 0.09; view.z += (target.z - view.z) * 0.09
+      }
       const wide = W > 760, avail = W - (wide && panelOpen ? 350 : 0)
       const cx = avail / 2, cy = H / 2, sx = Math.min(avail * 0.4, H * 0.62), sy = H * (wide ? 0.36 : 0.3)
 
       const pos = new Map<string, [number, number]>()
       worlds.forEach((w) => {
-        k[w.id] = Math.min(1, (k[w.id] ?? (w.level === 1 ? 1 : 0)) + 0.04)
+        k[w.id] = reducedMotion ? 1 : Math.min(1, (k[w.id] ?? (w.level === 1 ? 1 : 0)) + 0.04)
         const x = cx + (w.position.x - view.x) * sx * view.z, y = cy + (w.position.y - view.y) * sy * view.z
         pos.set(w.id, [x, y])
         const el = labels.current[w.id]
@@ -80,23 +89,66 @@ export default function UniverseCanvas(props: Props) {
       CONNECTIONS.forEach(([a, b]) => seg(a, b, [0.1, 0.28, 0.7][Math.min(tiers[a] ?? 0, tiers[b] ?? 0)]))
       worlds.forEach((w) => w.parentId && seg(w.parentId, w.id, 0.75 * k[w.id]))
 
-      renderer.draw(pts, ln, rm ? 0 : ms / 1000)
+      renderer.draw(pts, ln, reducedMotion ? 0 : ms / 1000)
+      if (!reducedMotion) raf = requestAnimationFrame(frame)
     }
-    raf = requestAnimationFrame(frame)
-    return () => { cancelAnimationFrame(raf); renderer.dispose() }
+    const scheduleFrame = () => {
+      if (!raf && !document.hidden && !contextLost && !disposed) raf = requestAnimationFrame(frame)
+    }
+    scheduleRender.current = scheduleFrame
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(raf)
+        raf = 0
+      } else {
+        scheduleFrame()
+      }
+    }
+    const onMotionPreferenceChange = (event: MediaQueryListEvent) => {
+      reducedMotion = event.matches
+      scheduleFrame()
+    }
+    const onResize = () => scheduleFrame()
+    const onContextLost = (event: Event) => {
+      event.preventDefault()
+      contextLost = true
+      cancelAnimationFrame(raf)
+      raf = 0
+      setGlError('WebGLの描画が停止しました。下の星一覧から選べます。')
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    motionPreference.addEventListener('change', onMotionPreferenceChange)
+    window.addEventListener('resize', onResize)
+    canvas.addEventListener('webglcontextlost', onContextLost)
+    scheduleFrame()
+    return () => {
+      disposed = true
+      cancelAnimationFrame(raf)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      motionPreference.removeEventListener('change', onMotionPreferenceChange)
+      window.removeEventListener('resize', onResize)
+      canvas.removeEventListener('webglcontextlost', onContextLost)
+      scheduleRender.current = () => {}
+      renderer.dispose()
+    }
   }, [])
+
+  useEffect(() => {
+    scheduleRender.current()
+  }, [props.worlds, props.tiers, props.selectedId, props.target, props.panelOpen])
 
   return (
     <>
       <canvas ref={cv} className="gl" aria-label="星座マップ" />
       {(noGl || glError) && (
-        <div className="nogl" style={{ display: 'grid' }}>
+        <div className="nogl" role="status" aria-live="polite">
           {glError ? `星空マップを描画できませんでした: ${glError}` : 'このブラウザはWebGL2に対応していません。'}
         </div>
       )}
-      <div className="lab">
+      <div className={`lab${noGl || glError ? ` fallback${panelOpen ? ' panel-open' : ''}` : ''}`}>
         {worlds.map((w) => (
           <button key={w.id} ref={(el) => { labels.current[w.id] = el }} aria-label={w.name}
+            aria-pressed={w.id === selectedId}
             className={`n t${tiers[w.id] ?? 0}${w.level === 2 ? ' lv2' : ''}${w.id === selectedId ? ' sel' : ''}`}
             onClick={() => onPick(w.id)}>
             <span>{w.name}</span>

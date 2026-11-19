@@ -23,10 +23,13 @@ interface Props {
 }
 
 export default function QuestionCard({ step, total, isLastStep, question, answers, onSelect, onNext, onBack }: Props) {
-  const selectedValue = question.answerKey ? answers[question.answerKey] : null
+  const selectedValue = question.answerKey === 'interest'
+    ? answers.interest
+    : question.answerKey === 'readingExperience' ? answers.readingExperience : null
+  const selectedMultiple = question.answerKey === 'curiosity' ? answers.curiosity : []
   const canNext = question.kind === 'genres'
-    ? answers.omakase || answers.q2.length > 0
-    : question.answerKey === 'q1' ? false : selectedValue !== null
+    ? answers.themes.length > 0
+    : question.kind === 'multi' ? selectedMultiple.length > 0 : selectedValue !== null
   return (
     <div className={`card${question.kind === 'genres' ? ' genre-card' : ''}`}>
       <ProgressBar step={step} total={total} />
@@ -35,18 +38,21 @@ export default function QuestionCard({ step, total, isLastStep, question, answer
       {question.kind === 'genres' ? (
         <div className="opts grid genre-grid">
           {GENRES.map((g) => (
-            <button key={g.id} type="button" className={`o${answers.q2.includes(g.id) ? ' on' : ''}`} aria-pressed={answers.q2.includes(g.id)} onClick={() => onSelect(g.id)}>
+            <button key={g.id} type="button" className={`o${answers.themes.includes(g.id) ? ' on' : ''}`} aria-pressed={answers.themes.includes(g.id)} onClick={() => onSelect(g.id)}>
               <Icon name={g.id} />{g.name}
             </button>
           ))}
-          <button type="button" className={`o${answers.omakase ? ' on' : ''}`} aria-pressed={answers.omakase} onClick={() => onSelect('omakase')}>
+          <button type="button" className={`o${answers.themes.includes('omakase') ? ' on' : ''}`} aria-pressed={answers.themes.includes('omakase')} onClick={() => onSelect('omakase')}>
             <Icon name="spk" />おまかせ
           </button>
         </div>
       ) : (
         <div className="opts">
           {question.options!.map((o) => (
-            <button key={String(o.value)} type="button" className={`o${selectedValue === o.value ? ' on' : ''}`} aria-pressed={selectedValue === o.value} onClick={() => onSelect(o.value)}>
+            <button key={String(o.value)} type="button"
+              className={`o${(question.kind === 'multi' ? selectedMultiple.some((id) => id === String(o.value)) : selectedValue === o.value) ? ' on' : ''}`}
+              aria-pressed={question.kind === 'multi' ? selectedMultiple.some((id) => id === String(o.value)) : selectedValue === o.value}
+              onClick={() => onSelect(String(o.value))}>
               <Icon name={o.icon} />{o.label}
             </button>
           ))}
