@@ -255,26 +255,3 @@ export function recommendNextInWorld(worldId: string, history: ReadEntry[], limi
   const readIds = new Set(history.map((h) => h.bookId))
   return booksForWorld(worldId).filter((b) => !readIds.has(b.id)).slice(0, limit)
 }
-
-export function recommendOtherWorld(
-  currentWorldId: string,
-  history: ReadEntry[],
-): { worldId: string; book: Book } | null {
-  const readIds = new Set(history.map((h) => h.bookId))
-  const current = WORLDS.find((w) => w.id === currentWorldId)
-  const currentRootId = current?.parentId ?? currentWorldId
-
-  for (const genre of GENRES) {
-    if (genre.id === currentRootId) continue
-
-    const book = booksForWorld(genre.id).find(
-      (b) => !readIds.has(b.id),
-    )
-
-    if (book) {
-      return { worldId: genre.id, book }
-    }
-  }
-
-  return null
-}

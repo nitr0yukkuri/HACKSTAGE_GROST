@@ -47,7 +47,7 @@ export default function BookCard({
           disabled={read}
           onClick={() => onRead(book.id)}
         >
-          {read ? '✓ 読了済み' : '📖 読んだ！'}
+          {read ? '読了' : '読了にする'}
         </button>
       )}
 

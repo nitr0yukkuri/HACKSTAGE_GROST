@@ -15,7 +15,6 @@ import {
   tiersFor,
   applyReadHistory,
   recommendNextInWorld,
-  recommendOtherWorld,
   type ReadEntry,
 } from '../../lib/recommendations'
 import type { OnboardingAnswers } from '../../types/hoshirube'
@@ -42,7 +41,6 @@ function Universe() {
   }, [])
   const baseScores = useMemo(() => calcScores(answers), [answers])
   const [history, setHistory] = useState<ReadEntry[]>([])
-  const [lastReadId, setLastReadId] = useState<string | null>(null)
 
   const readIds = useMemo(
     () => new Set(history.map((entry) => entry.bookId)),
@@ -62,7 +60,6 @@ function Universe() {
         ? prev
         : [...prev, { bookId, readAt: Date.now() }],
     )
-    setLastReadId(bookId)
   }
   const [picked, setPicked] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(true)
@@ -82,14 +79,8 @@ function Universe() {
     [selectedId, history],
   )
 
-  const otherWorld = useMemo(
-    () => recommendOtherWorld(selectedId, history),
-    [selectedId, history],
-  )
-
   const world = WORLDS.find((w) => w.id === selectedId)!
   const root = world.parentId ? WORLDS.find((w) => w.id === world.parentId)! : world
-  const kids = WORLDS.filter((w) => w.parentId === root.id)
   const visible = WORLDS.filter((w) => w.level === 1 || w.parentId === root.id) // 選んだ星の中ジャンルだけ展開
 
   const pick = (id: string) => { setPicked(id); setPanelOpen(true) }
@@ -300,16 +291,11 @@ function Universe() {
           <div className="hint">気になる星を選んで、その世界の本をのぞいてみよう</div>
           <WorldDetailPanel
             world={world}
-            root={root}
-            kids={kids}
             tier={tiers[world.id] ?? 0}
             books={booksForWorld(world.id)}
             recs={recs}
-            otherWorld={otherWorld}
             open={panelOpen}
             readIds={readIds}
-            lastReadId={lastReadId}
-            onPick={pick}
             onRead={onRead}
             onClose={() => setPanelOpen(false)}
             onExplore={() =>
