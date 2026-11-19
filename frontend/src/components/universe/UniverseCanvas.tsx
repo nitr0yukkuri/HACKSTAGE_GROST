@@ -69,7 +69,12 @@ export default function UniverseCanvas(props: Props) {
         const x = cx + (w.position.x - view.x) * sx * view.z, y = cy + (w.position.y - view.y) * sy * view.z
         pos.set(w.id, [x, y])
         const el = labels.current[w.id]
-        if (el) { el.style.transform = `translate(${x - 18}px,${y - 18}px)`; el.style.opacity = String(k[w.id]) }
+        if (el) {
+          el.style.transform = `translate(${x - 18}px,${y - 18}px)`
+          el.style.opacity = String(k[w.id])
+          const labelWidth = el.querySelector('span')?.getBoundingClientRect().width ?? 0
+          el.classList.toggle('label-left', x + 30 + labelWidth > W - 12 && x - 30 - labelWidth > 12)
+        }
       })
 
       const pts: number[] = []

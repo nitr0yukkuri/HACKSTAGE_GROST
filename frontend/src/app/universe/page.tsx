@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Link from 'next/link'
 import Logo from '../../components/common/Logo'
 import UniverseCanvas, { type ViewState } from '../../components/universe/UniverseCanvas'
@@ -20,6 +20,7 @@ import {
 import type { OnboardingAnswers } from '../../types/hoshirube'
 
 const HOME: ViewState = { x: 0, y: 0, z: 1 }
+const clamp = (value: number, limit = 1.3) => Math.min(limit, Math.max(-limit, value))
 interface ActivePan { pointerId: number; lastX: number; lastY: number }
 interface TouchPoint { x: number; y: number; pendingTap: boolean; pointerType: string }
 interface ActivePinch {
@@ -82,6 +83,35 @@ function Universe() {
   const world = WORLDS.find((w) => w.id === selectedId)!
   const root = world.parentId ? WORLDS.find((w) => w.id === world.parentId)! : world
   const visible = WORLDS.filter((w) => w.level === 1 || w.parentId === root.id) // 選んだ星の中ジャンルだけ展開
+
+  const focusWorld = useCallback((worldId: string, zoomLevel = 1, panelVisible = panelOpen) => {
+    if (typeof window === 'undefined' || window.innerWidth > 760) return
+    const map = mapRef.current
+    const focus = WORLDS.find((item) => item.id === worldId)
+    if (!map || !focus) return
+
+    const mapRect = map.getBoundingClientRect()
+    const panel = panelVisible ? map.querySelector<HTMLElement>('.panel') : null
+    const panelTop = panel && !panel.classList.contains('off')
+      ? panel.getBoundingClientRect().top
+      : mapRect.bottom
+    const openHeight = Math.max(80, panelTop - mapRect.top)
+    const desiredY = panelVisible
+      ? Math.min(openHeight * 0.44, mapRect.height * 0.26)
+      : mapRect.height / 2
+    const scaleY = mapRect.height * 0.3 * zoomLevel
+    const targetY = focus.position.y + (mapRect.height / 2 - desiredY) / scaleY
+
+    setTarget({
+      x: clamp(focus.position.x),
+      y: clamp(targetY, 2.2),
+      z: zoomLevel,
+    })
+  }, [panelOpen])
+
+  useEffect(() => {
+    if (answersReady) focusWorld(selectedId, 1, panelOpen)
+  }, [answersReady, selectedId, panelOpen, focusWorld])
 
   const pick = (id: string) => { setPicked(id); setPanelOpen(true) }
   const zoom = (f: number) => setTarget((t) => ({ ...t, z: Math.min(3, Math.max(0.6, t.z * f)) }))
@@ -165,11 +195,10 @@ function Universe() {
       const viewCenterY = rect.top + rect.height / 2
       const anchorX = pinch.startX + (pinch.startCenterX - viewCenterX) / (sx * pinch.startZoom)
       const anchorY = pinch.startY + (pinch.startCenterY - viewCenterY) / (sy * pinch.startZoom)
-      const clamp = (value: number) => Math.min(1.3, Math.max(-1.3, value))
       setTarget((t) => ({
         ...t,
         x: clamp(anchorX - (centerX - viewCenterX) / (sx * zoom)),
-        y: clamp(anchorY - (centerY - viewCenterY) / (sy * zoom)),
+        y: clamp(anchorY - (centerY - viewCenterY) / (sy * zoom), 2.2),
         z: zoom,
       }))
       return
@@ -193,11 +222,10 @@ function Universe() {
     const available = width - (wide && panelOpen ? 350 : 0)
     const sx = Math.max(1, Math.min(available * 0.4, height * 0.62))
     const sy = Math.max(1, height * (wide ? 0.36 : 0.3))
-    const clamp = (value: number) => Math.min(1.3, Math.max(-1.3, value))
     setTarget((t) => ({
       ...t,
       x: clamp(t.x - dx / (sx * t.z)),
-      y: clamp(t.y - dy / (sy * t.z)),
+      y: clamp(t.y - dy / (sy * t.z), 2.2),
     }))
   }
   const finishPointer = (pointerId: number, map: HTMLDivElement) => {
@@ -243,11 +271,10 @@ function Universe() {
       const available = width - (wide && panelOpen ? 350 : 0)
       const sx = Math.max(1, Math.min(available * 0.4, height * 0.62))
       const sy = Math.max(1, height * (wide ? 0.36 : 0.3))
-      const clamp = (value: number) => Math.min(1.3, Math.max(-1.3, value))
       setTarget((t) => ({
         ...t,
         x: clamp(t.x + dx / (sx * t.z)),
-        y: clamp(t.y + dy / (sy * t.z)),
+        y: clamp(t.y + dy / (sy * t.z), 2.2),
       }))
     }
     const onPointerEndOutside = (event: PointerEvent) => {
@@ -283,7 +310,7 @@ function Universe() {
           <div className="zc">
             <button aria-label="拡大" onClick={() => zoom(1.3)}>＋</button>
             <button aria-label="縮小" onClick={() => zoom(1 / 1.3)}>－</button>
-            <button aria-label="中心に戻す" onClick={() => setTarget(HOME)}>◎</button>
+            <button aria-label="中心に戻す" onClick={() => { if (window.innerWidth <= 760) focusWorld(selectedId, 1, panelOpen); else setTarget(HOME) }}>◎</button>
           </div>
           <div className="lgd">
             <div><s />興味が強い</div><div><s className="b" />少し気になる</div><div><s className="c" />まだ未知の領域</div>
@@ -298,13 +325,10 @@ function Universe() {
             readIds={readIds}
             onRead={onRead}
             onClose={() => setPanelOpen(false)}
-            onExplore={() =>
-              setTarget({
-                x: world.position.x,
-                y: world.position.y,
-                z: 1.8,
-              })
-            }
+            onExplore={() => {
+              if (window.innerWidth <= 760) focusWorld(world.id, 1.25, panelOpen)
+              else setTarget({ x: world.position.x, y: world.position.y, z: 1.8 })
+            }}
           />
         </> : <div className="map-loading" role="status" aria-live="polite">星座図を準備しています…</div>}
       </div>

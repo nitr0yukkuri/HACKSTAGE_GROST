@@ -44,12 +44,14 @@ export default function WorldDetailPanel({
 
   return (
     <aside className={`panel${open ? '' : ' off'}`}>
-      <button className="x" aria-label="閉じる" onClick={onClose}>×</button>
-      <div className="ph">
-        <div>
-          <h3>{world.name}</h3>
-          <p>{world.description}</p>
-          <span className={`tg t${tier}`}>{TIER_LABEL[tier]}</span>
+      <div className="panel-head">
+        <button className="x" aria-label="閉じる" onClick={onClose}>×</button>
+        <div className="ph">
+          <div>
+            <h3>{world.name}</h3>
+            <p>{world.description}</p>
+            <span className={`tg t${tier}`}>{TIER_LABEL[tier]}</span>
+          </div>
         </div>
       </div>
       <h4>この星につながる本</h4>
