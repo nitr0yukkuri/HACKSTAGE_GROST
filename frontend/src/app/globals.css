@@ -51,12 +51,14 @@ h2{margin:22px 0 6px;font-size:clamp(19px,3.6vw,24px);line-height:1.6}
 .tabs{display:flex;gap:6px;margin:0 auto 0 22px}
 .tab{padding:7px 18px;border-radius:999px;border:1px solid transparent;background:none;color:var(--mut);display:flex;gap:8px;align-items:center}
 .tab.on{border-color:rgba(150,190,255,.6);background:rgba(50,80,160,.4);color:#fff}
-.tab[aria-disabled]{opacity:.5;cursor:default}
+.tab:disabled{opacity:.5;cursor:default}
 .rs{border:1px solid var(--ln);border-radius:999px;padding:6px 14px;background:none;font-size:13px;color:#cdd9f5}
-.map{position:relative;flex:1;min-height:0;overscroll-behavior:contain}
-.gl{position:absolute;inset:0;width:100%;height:100%;background:transparent}
+.map{position:relative;flex:1;min-height:0;overscroll-behavior:contain;cursor:grab}
+.map:active{cursor:grabbing}
+.map-loading{position:absolute;inset:0;display:grid;place-items:center;color:var(--mut)}
+.gl{position:absolute;inset:0;width:100%;height:100%;background:transparent;touch-action:none}
 .lab{position:absolute;inset:0;overflow:hidden;pointer-events:none}
-.n{position:absolute;left:0;top:0;width:36px;height:36px;border:0;background:none;pointer-events:auto;border-radius:50%;will-change:transform}
+.n{position:absolute;left:0;top:0;width:36px;height:36px;border:0;background:none;pointer-events:auto;border-radius:50%;will-change:transform;touch-action:none}
 .n span{position:absolute;left:30px;top:50%;transform:translateY(-50%);white-space:nowrap;font-size:14px;text-shadow:0 0 8px #040916,0 0 3px #040916;color:#b8c8e8}
 .n.t2 span{color:#fff;font-weight:600}
 .n.t0 span{color:#7f90b5}
@@ -88,11 +90,19 @@ h2{margin:22px 0 6px;font-size:clamp(19px,3.6vw,24px);line-height:1.6}
 .chips button{padding:6px 14px;border-radius:99px;border:1px solid var(--ln);background:rgba(255,255,255,.04);font-size:13px}
 .chips button.on{border-color:var(--gold);color:var(--gold)}
 .panel .pill{width:100%;justify-content:center;margin-top:18px}
-.nogl{display:none;position:absolute;inset:0;place-items:center;color:var(--mut)}
+.nogl{position:absolute;z-index:2;top:12px;left:50%;transform:translateX(-50%);max-width:calc(100% - 32px);padding:8px 14px;border:1px solid var(--ln);border-radius:12px;background:rgba(10,18,40,.88);color:var(--mut);text-align:center;font-size:13px;pointer-events:none}
+.lab.fallback{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;align-content:center;padding:64px 24px 64px 64px;pointer-events:auto}
+.lab.fallback.panel-open{padding-right:366px}
+.lab.fallback .n{position:relative;left:auto;top:auto;width:auto;height:auto;min-height:44px;padding:8px 12px;border:1px solid var(--ln);border-radius:12px;background:rgba(13,21,42,.9);text-align:left;transform:none!important;opacity:1!important;touch-action:manipulation}
+.lab.fallback .n span{position:static;display:block;transform:none;white-space:normal;font-size:14px}
 @media(max-width:760px){
-.nav{padding:0 12px;gap:8px}.nav .lg span{display:none}.tabs{margin-left:4px}.tab{padding:6px 10px}.tab[aria-disabled]{display:none}
+.nav{padding:0 12px;gap:8px}.nav .lg span{display:none}.tabs{margin-left:4px}.tab{padding:6px 10px}.tab:disabled{display:none}
 .genre-grid{margin-inline:-6px}
-.panel{left:10px;right:10px;top:auto;bottom:10px;width:auto;max-height:46%;background:rgba(13,21,42,.58);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.panel{left:10px;right:10px;top:auto;bottom:10px;width:auto;max-height:46%;background:rgba(13,21,42,.58);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);touch-action:pan-y}
+.nogl{top:8px}
+.lab.fallback{grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;gap:8px;padding:54px 12px calc(46% + 30px);overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y}
+.lab.fallback.panel-open{padding:54px 12px calc(46% + 30px)}
+.lab.fallback .n{min-width:0;padding:8px 10px}
 .hint,.lgd{display:none}
 .opts.grid{grid-template-columns:1fr 1fr}.card{padding:22px 16px 18px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
