@@ -1,7 +1,15 @@
 import type { World } from '../types/hoshirube'
+import themeCatalog from '../../../contracts/themes.json'
+
+const SEARCH_QUERY_BY_ID = new Map(themeCatalog.themes.map((theme) => [theme.id, theme.searchQuery]))
+const searchQueryFor = (id: string): string => {
+  const query = SEARCH_QUERY_BY_ID.get(id)
+  if (!query) throw new Error(`Missing search query for theme: ${id}`)
+  return query
+}
 
 const l1 = (id: string, name: string, description: string, x: number, y: number, color: string): World =>
-  ({ id, name, description, level: 1, parentId: null, position: { x, y }, color })
+  ({ id, name, description, searchQuery: searchQueryFor(id), level: 1, parentId: null, position: { x, y }, color })
 
 const WORLDS_L1: World[] = [
   l1('phi', '哲学', '当たり前を疑い、考え方そのものを見つめ直す世界', -0.9, 0.12, '#b9a8ff'),
@@ -18,7 +26,8 @@ const WORLDS_L1: World[] = [
 // 中ジャンル（Level 2）。親からの相対位置で配置。MVPでは3ジャンルだけ展開できる
 const l2 = (parentId: string, key: string, name: string, description: string, dx: number, dy: number): World => {
   const p = WORLDS_L1.find((w) => w.id === parentId)!
-  return { id: `${parentId}-${key}`, name, description, level: 2, parentId, position: { x: p.position.x + dx, y: p.position.y + dy }, color: p.color }
+  const id = `${parentId}-${key}`
+  return { id, name, description, searchQuery: searchQueryFor(id), level: 2, parentId, position: { x: p.position.x + dx, y: p.position.y + dy }, color: p.color }
 }
 
 export const WORLDS: World[] = [

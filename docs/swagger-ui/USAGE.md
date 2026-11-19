@@ -19,7 +19,7 @@ npm --prefix docs/swagger-ui run serve
 
 - `lint` は Redocly CLI で OpenAPI の形式・参照・example を検証する。
 - `check` はカタログと OpenAPI の一致、回答例の意味条件、seed の3星・検索語、GET の必須条件、旧パスの不存在を確認する静的検証。本番バリデータではない。
-- API サーバー（API Gateway・Lambda）と AWS リソースは未実装。`https://api.example.invalid` は実在しないプレースホルダーで、契約参照専用。外部通信を伴う API テストやデプロイは行わない。
+- AWS API サーバー（API Gateway・Lambda）と AWS リソースは未実装。`https://api.example.invalid` は実在しないプレースホルダーで、契約参照専用。ローカルの契約モックとk6検証は [`docs/mock-api-k6.md`](../mock-api-k6.md) を参照する。これはGoogle Books・Bedrock・AWSへ接続せず、本番APIの性能や推薦品質を検証するものではない。
 
 ## 呼び出し例
 
