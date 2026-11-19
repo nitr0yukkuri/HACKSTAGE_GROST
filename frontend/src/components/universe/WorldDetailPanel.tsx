@@ -53,8 +53,8 @@ export default function WorldDetailPanel({
             <span className={`tg t${tier}`}>{TIER_LABEL[tier]}</span>
           </div>
         </div>
+        <h4 className="panel-section-title">この星につながる本</h4>
       </div>
-      <h4>この星につながる本</h4>
       {renderBooks(otherBooks)}
 
       {hasReadInWorld && (
