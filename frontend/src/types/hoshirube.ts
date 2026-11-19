@@ -22,18 +22,16 @@ export interface Book {
 }
 
 export interface OnboardingAnswers {
-  q1: number | null
-  q2: string[]
-  omakase: boolean
-  q3: number | null
-  q4Topic: string | null
-  q4Novelty: number | null
+  interest: 'create' | 'think_deeply' | 'explore_unknown' | 'people_society' | 'none' | null
+  themes: string[]
+  curiosity: ('music_emotions' | 'space_mysteries' | 'city_origins')[]
+  readingExperience: 'new_perspective' | 'learn_knowledge' | 'deepen_thought' | 'immerse_story' | null
 }
 
-export type QuestionAnswerKey = 'q1' | 'q3' | 'q4Topic' | 'q4Novelty'
+export type QuestionAnswerKey = 'interest' | 'readingExperience' | 'curiosity'
 
 export interface Question {
-  kind: 'single' | 'genres'
+  kind: 'single' | 'genres' | 'multi'
   title: string[]
   subtitle?: string
   answerKey?: QuestionAnswerKey
