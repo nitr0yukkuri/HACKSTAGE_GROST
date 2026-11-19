@@ -1,16 +1,16 @@
 'use client'
-import { Suspense, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
 import Logo from '../../components/common/Logo'
 import UniverseCanvas, { type ViewState } from '../../components/universe/UniverseCanvas'
 import WorldDetailPanel from '../../components/universe/WorldDetailPanel'
 import { WORLDS } from '../../data/worlds'
-import { booksForWorld, calcScores, decodeAnswers, initialWorldId, tiersFor } from '../../lib/recommendations'
+import { booksForWorld, calcScores, decodeAnswers, emptyOnboardingAnswers, initialWorldId, loadOnboardingAnswers, tiersFor } from '../../lib/recommendations'
+import type { OnboardingAnswers } from '../../types/hoshirube'
 
 const HOME: ViewState = { x: 0, y: 0, z: 1 }
 interface ActivePan { pointerId: number; lastX: number; lastY: number }
-interface TouchPoint { x: number; y: number; pendingTap: boolean }
+interface TouchPoint { x: number; y: number; pendingTap: boolean; pointerType: string }
 interface ActivePinch {
   pointerIds: [number, number]
   startDistance: number
@@ -22,8 +22,12 @@ interface ActivePinch {
 }
 
 function Universe() {
-  const qs = useSearchParams().toString()
-  const answers = useMemo(() => decodeAnswers(qs), [qs])
+  const [answers, setAnswers] = useState<OnboardingAnswers>(emptyOnboardingAnswers)
+  const [answersReady, setAnswersReady] = useState(false)
+  useEffect(() => {
+    setAnswers(decodeAnswers(loadOnboardingAnswers()))
+    setAnswersReady(true)
+  }, [])
   const scores = useMemo(() => calcScores(answers), [answers])
   const tiers = useMemo(() => tiersFor(scores), [scores])
   const [picked, setPicked] = useState<string | null>(null)
@@ -34,9 +38,10 @@ function Universe() {
   const activePointers = useRef(new Map<number, TouchPoint>())
   const activePinch = useRef<ActivePinch | null>(null)
   const targetRef = useRef(target)
+  const finishPointerRef = useRef<(pointerId: number, map: HTMLDivElement) => void>(() => {})
   targetRef.current = target
 
-  const selectedId = picked ?? initialWorldId(scores, answers.omakase ? answers.q4Novelty : null)
+  const selectedId = picked ?? initialWorldId(scores)
   const world = WORLDS.find((w) => w.id === selectedId)!
   const root = world.parentId ? WORLDS.find((w) => w.id === world.parentId)! : world
   const kids = WORLDS.filter((w) => w.parentId === root.id)
@@ -45,15 +50,25 @@ function Universe() {
   const pick = (id: string) => { setPicked(id); setPanelOpen(true) }
   const zoom = (f: number) => setTarget((t) => ({ ...t, z: Math.min(3, Math.max(0.6, t.z * f)) }))
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== 'touch' || activePointers.current.has(event.pointerId)) return
+    if (!answersReady) return
+    if ((event.pointerType !== 'touch' && event.pointerType !== 'mouse') || event.button !== 0 || activePointers.current.has(event.pointerId)) return
     const targetElement = event.target instanceof Element ? event.target : null
-    if (targetElement?.closest('.panel, .zc')) return
+    if (targetElement?.closest('.panel, .zc, .lgd, .hint')) return
+    if (event.pointerType === 'mouse') {
+      if (activePointers.current.size || targetElement?.closest('.n')) return
+      activePointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY, pendingTap: false, pointerType: 'mouse' })
+      event.currentTarget.setPointerCapture(event.pointerId)
+      activePan.current = { pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY }
+      return
+    }
+    if (Array.from(activePointers.current.values()).some((point) => point.pointerType === 'mouse')) return
     if (activePointers.current.size >= 2) return
 
     activePointers.current.set(event.pointerId, {
       x: event.clientX,
       y: event.clientY,
       pendingTap: Boolean(targetElement?.closest('.n')),
+      pointerType: 'touch',
     })
 
     if (activePointers.current.size === 1) {
@@ -149,18 +164,20 @@ function Universe() {
       y: clamp(t.y - dy / (sy * t.z)),
     }))
   }
-  const stopPan = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!activePointers.current.delete(event.pointerId)) return
+  const finishPointer = (pointerId: number, map: HTMLDivElement) => {
+    if (!activePointers.current.delete(pointerId)) return
     activePinch.current = null
     activePan.current = null
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (map.hasPointerCapture(pointerId)) map.releasePointerCapture(pointerId)
 
     if (activePointers.current.size === 1) {
-      const [pointerId, point] = Array.from(activePointers.current.entries())[0]
+      const [remainingId, point] = Array.from(activePointers.current.entries())[0]
       point.pendingTap = false
-      activePan.current = { pointerId, lastX: point.x, lastY: point.y }
+      activePan.current = { pointerId: remainingId, lastX: point.x, lastY: point.y }
     }
   }
+  finishPointerRef.current = finishPointer
+  const stopPan = (event: ReactPointerEvent<HTMLDivElement>) => finishPointer(event.pointerId, event.currentTarget)
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
@@ -197,9 +214,19 @@ function Universe() {
         y: clamp(t.y + dy / (sy * t.z)),
       }))
     }
+    const onPointerEndOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && map.contains(event.target)) return
+      finishPointerRef.current(event.pointerId, map)
+    }
 
     map.addEventListener('wheel', onWheel, { passive: false })
-    return () => map.removeEventListener('wheel', onWheel)
+    window.addEventListener('pointerup', onPointerEndOutside)
+    window.addEventListener('pointercancel', onPointerEndOutside)
+    return () => {
+      map.removeEventListener('wheel', onWheel)
+      window.removeEventListener('pointerup', onPointerEndOutside)
+      window.removeEventListener('pointercancel', onPointerEndOutside)
+    }
   }, [panelOpen])
 
   return (
@@ -208,31 +235,33 @@ function Universe() {
         <Link href="/" className="lg" aria-label="最初に戻る"><Logo label /></Link>
         <div className="tabs">
           <button className="tab on">星座図</button>
-          <button className="tab" aria-disabled="true" title="準備中">探索</button>
-          <button className="tab" aria-disabled="true" title="準備中">ライブラリ</button>
+          <button className="tab" disabled title="準備中">探索</button>
+          <button className="tab" disabled title="準備中">ライブラリ</button>
         </div>
         <Link href="/onboarding" className="rs">質問をやり直す</Link>
       </div>
       <div className="map" ref={mapRef} onPointerDown={startPan} onPointerMove={movePan}
         onPointerUp={stopPan} onPointerCancel={stopPan} onLostPointerCapture={stopPan}>
-        <UniverseCanvas worlds={visible} tiers={tiers} selectedId={selectedId} target={target} panelOpen={panelOpen} onPick={pick} />
-        <div className="zc">
-          <button aria-label="拡大" onClick={() => zoom(1.3)}>＋</button>
-          <button aria-label="縮小" onClick={() => zoom(1 / 1.3)}>－</button>
-          <button aria-label="中心に戻す" onClick={() => setTarget(HOME)}>◎</button>
-        </div>
-        <div className="lgd">
-          <div><s />興味が強い</div><div><s className="b" />少し気になる</div><div><s className="c" />まだ未知の領域</div>
-        </div>
-        <div className="hint">気になる星を選んで、その世界の本をのぞいてみよう</div>
-        <WorldDetailPanel world={world} root={root} kids={kids} tier={tiers[world.id]} books={booksForWorld(world.id)} open={panelOpen}
-          onPick={pick} onClose={() => setPanelOpen(false)}
-          onExplore={() => setTarget({ x: world.position.x, y: world.position.y, z: 1.8 })} />
+        {answersReady ? <>
+          <UniverseCanvas worlds={visible} tiers={tiers} selectedId={selectedId} target={target} panelOpen={panelOpen} onPick={pick} />
+          <div className="zc">
+            <button aria-label="拡大" onClick={() => zoom(1.3)}>＋</button>
+            <button aria-label="縮小" onClick={() => zoom(1 / 1.3)}>－</button>
+            <button aria-label="中心に戻す" onClick={() => setTarget(HOME)}>◎</button>
+          </div>
+          <div className="lgd">
+            <div><s />興味が強い</div><div><s className="b" />少し気になる</div><div><s className="c" />まだ未知の領域</div>
+          </div>
+          <div className="hint">気になる星を選んで、その世界の本をのぞいてみよう</div>
+          <WorldDetailPanel world={world} root={root} kids={kids} tier={tiers[world.id]} books={booksForWorld(world.id)} open={panelOpen}
+            onPick={pick} onClose={() => setPanelOpen(false)}
+            onExplore={() => setTarget({ x: world.position.x, y: world.position.y, z: 1.8 })} />
+        </> : <div className="map-loading" role="status" aria-live="polite">星座図を準備しています…</div>}
       </div>
     </section>
   )
 }
 
 export default function UniversePage() {
-  return <Suspense><Universe /></Suspense>
+  return <Universe />
 }
