@@ -187,3 +187,150 @@ a.pill{color:inherit;text-decoration:none}
 .panel li .book-info-link{display:inline-block;margin-top:4px;color:#a9c2f5;font-size:11px;text-decoration:underline;text-underline-offset:2px}
 .panel-book-meta em{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:760px){.api-mode-note{top:8px;left:10px}.discovery-gate{padding:12px}.discovery-gate>div{padding:22px}}
+
+
+/* HOSHIRUBE TITLE EFFECT START */
+.hoshirube-title {
+  display: inline-flex;
+  align-items: baseline;
+  cursor: default;
+}
+
+.hoshirube-letter {
+  display: inline-block;
+  color: #d9edff;
+  background: linear-gradient(
+    120deg,
+    #a9d9ff 0%,
+    #eff9ff 45%,
+    #f5d991 75%,
+    #a9d9ff 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+
+  transform-origin: center bottom;
+  animation: hoshirube-letter-twinkle 4.8s ease-in-out infinite;
+}
+
+/* 1文字ずつ時間差で輝く */
+.hoshirube-letter:nth-of-type(2) {
+  animation-delay: 0.35s;
+}
+
+.hoshirube-letter:nth-of-type(3) {
+  animation-delay: 0.7s;
+}
+
+.hoshirube-letter:nth-of-type(4) {
+  animation-delay: 1.05s;
+}
+
+.hoshirube-letter:nth-of-type(5) {
+  animation-delay: 1.4s;
+}
+
+@keyframes hoshirube-letter-twinkle {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.82;
+    filter: drop-shadow(0 0 3px rgba(139, 205, 255, 0.3));
+  }
+
+  12% {
+    transform: translateY(-5px);
+    opacity: 1;
+    filter:
+      drop-shadow(0 0 12px rgba(156, 218, 255, 0.9))
+      drop-shadow(0 0 18px rgba(245, 217, 145, 0.5));
+  }
+
+  24% {
+    transform: translateY(0);
+    opacity: 0.9;
+    filter: drop-shadow(0 0 6px rgba(139, 205, 255, 0.4));
+  }
+}
+
+/* 1文字をホバー中は、ほかの文字の通常アニメーションを一時停止 */
+.hoshirube-title:has(.hoshirube-letter:hover)
+  .hoshirube-letter:not(:hover) {
+  animation-play-state: paused;
+}
+
+/* ホバーした文字だけが星のように跳ねる */
+.hoshirube-letter:hover {
+  animation: hoshirube-letter-hover 0.7s ease-in-out both;
+  animation-delay: 0s;
+}
+
+@keyframes hoshirube-letter-hover {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-12px) scale(1.12);
+    filter:
+      drop-shadow(0 0 15px rgba(156, 218, 255, 1))
+      drop-shadow(0 0 24px rgba(245, 217, 145, 0.7));
+  }
+
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hoshirube-letter,
+  .hoshirube-letter:hover {
+    animation: none;
+    transform: none;
+  }
+}
+/* HOSHIRUBE TITLE EFFECT END */
+
+
+/* HOSHIRUBE LOGO SPARKLE START */
+.hoshirube-logo {
+  display: inline-block;
+  position: relative;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.hoshirube-logo__star-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  filter: brightness(1);
+  transition: opacity 0.25s ease, filter 0.25s ease;
+}
+
+.hoshirube-logo:hover .hoshirube-logo__star-glow,
+.site-nav__brand:hover .hoshirube-logo__star-glow {
+  opacity: 1;
+  animation: hoshirube-real-star-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes hoshirube-real-star-glow {
+  0%, 100% {
+    filter: brightness(1) drop-shadow(0 0 2px #ffe6a0);
+  }
+
+  50% {
+    filter:
+      brightness(1.8)
+      drop-shadow(0 0 8px #ffe6a0)
+      drop-shadow(0 0 16px rgba(255, 210, 100, 0.8));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hoshirube-logo__star-glow {
+    animation: none !important;
+  }
+}
+/* HOSHIRUBE LOGO SPARKLE END */
