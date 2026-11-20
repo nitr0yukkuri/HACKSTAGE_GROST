@@ -723,6 +723,14 @@ a.pill{color:inherit;text-decoration:none}
 
 /* HOSHIRUBE ROCKET REFINEMENT END */
 
+
+/* DISABLE ROCKET BURST */
+.hoshirube-rocket-button.is-launching
+.hoshirube-rocket-button__burst {
+  animation: none;
+  opacity: 0;
+}
+
 /* HOSHIRUBE ROCKET BUTTON END */
 
 /* HOSHIRUBE HERO POSITION START */
@@ -733,3 +741,21 @@ a.pill{color:inherit;text-decoration:none}
   transform: translateY(-20px);
 }
 /* HOSHIRUBE HERO POSITION END */
+
+/* HOSHIRUBE CURSOR TRAIL START */
+.hoshirube-cursor-trail {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 20;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .hoshirube-cursor-trail {
+    display: none;
+  }
+}
+/* HOSHIRUBE CURSOR TRAIL END */
