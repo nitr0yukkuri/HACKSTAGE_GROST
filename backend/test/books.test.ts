@@ -1751,6 +1751,36 @@ describe('books の日次外部呼び出し上限', () => {
     expect(harness.usage.calls[0]?.requestId).toBe('test-request-id');
   });
 
+  it('カウンタが利用できなければキャッシュミスでは 502、Google Books を呼ばない（fail-closed）', async () => {
+    const harness = createHarness({
+      googleBooks: googleBooksStub(() => defaultVolumes(1)),
+      usage: usageStub(() => 'unavailable'),
+      apiKey: async () => 'KEY',
+    });
+
+    const response = await harness.handler(booksEvent());
+    expect(response.statusCode).toBe(502);
+    expect(parseJson<ErrorBody>(response.body).error.code).toBe('BOOKS_UPSTREAM_ERROR');
+    expect(harness.usage.calls.map((call) => call.kind)).toEqual(['google_books']);
+    expect(harness.googleBooks.queries).toHaveLength(0);
+    expect(harness.booksCache.get('プログラミング 入門', 0)).toBeUndefined();
+  });
+
+  it('カウンタには event.requestContext.http.sourceIp だけを渡す', async () => {
+    const harness = createHarness({
+      googleBooks: googleBooksStub(() => defaultVolumes(1)),
+      bedrock: bedrockStub(() => recommendationsJson([{ id: 'vol-1', reason: '理由です。' }])),
+    });
+
+    const response = await harness.handler(booksEvent({ sourceIp: '198.51.100.7' }));
+    expect(response.statusCode).toBe(200);
+    expect(harness.usage.calls).toHaveLength(2);
+    expect(harness.usage.calls.map((call) => call.sourceIp)).toEqual([
+      '198.51.100.7',
+      '198.51.100.7',
+    ]);
+  });
+
   it('検索予算が尽きて 504 になる場合は消費しない', async () => {
     let clock = 0;
     const harness = createHarness({
@@ -1800,6 +1830,52 @@ describe('books の日次外部呼び出し上限', () => {
     ]);
     expect(harness.bedrock.calls).toHaveLength(0);
     expect(harness.usage.calls.map((call) => call.kind)).toEqual(['google_books', 'bedrock']);
+  });
+
+  it('理由生成の直前でカウンタが利用できなくても Bedrock を呼ばず 200 + 警告', async () => {
+    const harness = createHarness({
+      googleBooks: googleBooksStub(() => defaultVolumes(1)),
+      bedrock: bedrockStub(() => recommendationsJson([{ id: 'vol-1', reason: '理由です。' }])),
+      usage: usageStub((kind) => (kind === 'google_books' ? 'ok' : 'unavailable')),
+    });
+
+    const response = await harness.handler(booksEvent());
+    expect(response.statusCode).toBe(200);
+    const body = parseJson<BooksResponseBody>(response.body);
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]?.recommendationReason).toBeNull();
+    expect(body.warnings.map((warning) => warning.code)).toEqual([
+      'RECOMMENDATION_REASON_UNAVAILABLE',
+    ]);
+    expect(harness.bedrock.calls).toHaveLength(0);
+    expect(harness.usage.calls.map((call) => call.kind)).toEqual(['google_books', 'bedrock']);
+  });
+
+  it('キャッシュ済みの検索結果と理由はカウンタが利用できなくても返す', async () => {
+    let usageAvailable = true;
+    const harness = createHarness({
+      googleBooks: googleBooksStub(() => defaultVolumes(1)),
+      bedrock: bedrockStub(() => recommendationsJson([{ id: 'vol-1', reason: '理由です。' }])),
+      usage: usageStub(() => (usageAvailable ? 'ok' : 'unavailable')),
+    });
+
+    const first = await harness.handler(booksEvent());
+    expect(first.statusCode).toBe(200);
+    expect(parseJson<BooksResponseBody>(first.body).items[0]?.recommendationReason).toBe(
+      '理由です。',
+    );
+
+    const callsAfterFirst = harness.usage.calls.length;
+    usageAvailable = false;
+    const second = await harness.handler(booksEvent());
+    expect(second.statusCode).toBe(200);
+    const body = parseJson<BooksResponseBody>(second.body);
+    expect(body.items[0]?.recommendationReason).toBe('理由です。');
+    expect(body.warnings).toEqual([]);
+    // 検索・理由ともキャッシュヒットなので消費しない。
+    expect(harness.usage.calls).toHaveLength(callsAfterFirst);
+    expect(harness.googleBooks.queries).toHaveLength(1);
+    expect(harness.bedrock.calls).toHaveLength(1);
   });
 });
 
@@ -2103,6 +2179,25 @@ describe('検索の段階予算とカウンタ待ち', () => {
       usage: usageStub(() => {
         clock = 7_000;
         return 'ok';
+      }),
+      limits: { totalMs: 25_000, booksSearchMs: 6_000, responseReserveMs: 1_000 },
+      now: () => clock,
+    });
+
+    const response = await harness.handler(booksEvent());
+    expect(response.statusCode).toBe(504);
+    expect(parseJson<ErrorBody>(response.body).error.code).toBe('UPSTREAM_TIMEOUT');
+    expect(harness.usage.calls).toHaveLength(1);
+    expect(harness.googleBooks.queries).toHaveLength(0);
+  });
+
+  it('カウンタが利用できず検索予算も尽きていたら 504 を優先し Google Books を呼ばない', async () => {
+    let clock = 0;
+    const harness = createHarness({
+      googleBooks: googleBooksStub(() => defaultVolumes(1)),
+      usage: usageStub(() => {
+        clock = 7_000;
+        return 'unavailable';
       }),
       limits: { totalMs: 25_000, booksSearchMs: 6_000, responseReserveMs: 1_000 },
       now: () => clock,

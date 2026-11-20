@@ -1011,16 +1011,32 @@ describe('seed の日次外部呼び出し上限', () => {
     expect(harness.usage.calls.map((call) => call.kind)).toEqual(['bedrock']);
   });
 
-  it('カウンタが利用できなければ続行する（fail-open）', async () => {
+  it('カウンタが利用できなければ 503 DISCOVERY_UNAVAILABLE で Bedrock を呼ばない（fail-closed）', async () => {
     const harness = createHarness({
       bedrock: bedrockStub(() => seedText()),
       usage: usageStub(() => 'unavailable'),
     });
 
     const response = await harness.handler(seedEvent(V1_NORMAL));
-    expect(response.statusCode).toBe(200);
-    expect(harness.bedrock.calls).toHaveLength(1);
+    expect(response.statusCode).toBe(503);
+    expect(parseJson<ErrorBody>(response.body).error.code).toBe('DISCOVERY_UNAVAILABLE');
+    expect(harness.bedrock.calls).toHaveLength(0);
     expect(harness.usage.calls).toHaveLength(1);
+  });
+
+  it('カウンタには event.requestContext.http.sourceIp だけを渡す', async () => {
+    const harness = createHarness({
+      bedrock: bedrockStub(() => seedText()),
+      usage: usageStub(() => 'ok'),
+    });
+
+    const response = await harness.handler(
+      seedEvent(V1_NORMAL, {
+        sourceIp: '203.0.113.9',
+      }),
+    );
+    expect(response.statusCode).toBe(200);
+    expect(harness.usage.calls[0]?.sourceIp).toBe('203.0.113.9');
   });
 
   it('再試行の直前で上限に達していたら 502 で Bedrock は1回だけ', async () => {
@@ -1030,6 +1046,23 @@ describe('seed の日次外部呼び出し上限', () => {
       usage: usageStub(() => {
         consumed += 1;
         return consumed === 1 ? 'ok' : 'exceeded';
+      }),
+    });
+
+    const response = await harness.handler(seedEvent(V1_NORMAL));
+    expect(response.statusCode).toBe(502);
+    expect(parseJson<ErrorBody>(response.body).error.code).toBe('DISCOVERY_UPSTREAM_ERROR');
+    expect(harness.bedrock.calls).toHaveLength(1);
+    expect(harness.usage.calls).toHaveLength(2);
+  });
+
+  it('再試行の直前でカウンタが利用できなければ 502 で Bedrock は1回だけ', async () => {
+    let consumed = 0;
+    const harness = createHarness({
+      bedrock: bedrockStub(() => seedText(SEED_THEMES.slice(0, 2))),
+      usage: usageStub(() => {
+        consumed += 1;
+        return consumed === 1 ? 'ok' : 'unavailable';
       }),
     });
 
@@ -1136,6 +1169,24 @@ describe('seed の段階予算とカウンタ待ち', () => {
       usage: usageStub(() => {
         clock = 1_000;
         return 'ok';
+      }),
+      limits: { totalMs: 1_000, seedBedrockMs: 15_000, responseReserveMs: 5 },
+      now: () => clock,
+    });
+
+    const response = await harness.handler(seedEvent(V1_NORMAL));
+    expect(response.statusCode).toBe(504);
+    expect(parseJson<ErrorBody>(response.body).error.code).toBe('UPSTREAM_TIMEOUT');
+    expect(harness.bedrock.calls).toHaveLength(0);
+  });
+
+  it('カウンタが利用できず期限も切れていたら 504 を優先し Bedrock を呼ばない', async () => {
+    let clock = 0;
+    const harness = createHarness({
+      bedrock: bedrockStub(() => seedText()),
+      usage: usageStub(() => {
+        clock = 1_000;
+        return 'unavailable';
       }),
       limits: { totalMs: 1_000, seedBedrockMs: 15_000, responseReserveMs: 5 },
       now: () => clock,

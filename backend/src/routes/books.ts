@@ -120,6 +120,7 @@ export async function handleBooks(
       'google_books',
       ctx.deadline.signalFor(Math.min(USAGE_CONSUME_TIMEOUT_MS, searchBudgetMs)),
       ctx.requestId,
+      ctx.event.requestContext?.http?.sourceIp,
     );
     if (usage === 'exceeded') {
       throw new AppError(429, 'RATE_LIMITED');
@@ -135,6 +136,12 @@ export async function handleBooks(
         outcome: 'timeout',
       });
       throw booksTimeout();
+    }
+
+    if (usage === 'unavailable') {
+      // カウンタが使えないときは Google Books を呼ばない（fail-closed）。
+      // 期限切れは上のタイムアウト判定を優先する。
+      throw new AppError(502, 'BOOKS_UPSTREAM_ERROR');
     }
 
     try {
@@ -292,11 +299,12 @@ async function selectRecommendedBooks(
       Math.min(USAGE_CONSUME_TIMEOUT_MS, ctx.deps.limits.recommendationMs),
     ),
     ctx.requestId,
+    ctx.event.requestContext?.http?.sourceIp,
   );
   // カウンタ待ちを差し引いて理由段階の残量を再計算する。
   const reasonBudgetMs = ctx.deps.limits.recommendationMs - (ctx.deps.now() - reasonStarted);
-  if (consumed === 'exceeded' || ctx.deadline.expired() || reasonBudgetMs <= 0) {
-    // 日次上限・期限切れでは Bedrock を呼ばず、取得済みの本を 200 + 警告で返す。
+  if (consumed !== 'ok' || ctx.deadline.expired() || reasonBudgetMs <= 0) {
+    // 日次上限・カウンタ利用不可・期限切れでは Bedrock を呼ばず、取得済みの本を 200 + 警告で返す。
     return null;
   }
 

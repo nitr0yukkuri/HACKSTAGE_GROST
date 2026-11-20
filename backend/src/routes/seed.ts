@@ -112,6 +112,7 @@ async function callSeedBedrock(
     'bedrock',
     ctx.deadline.signalFor(Math.min(USAGE_CONSUME_TIMEOUT_MS, counterBudgetMs)),
     ctx.requestId,
+    ctx.event.requestContext?.http?.sourceIp,
   );
   if (usage === 'exceeded') {
     // 初回は利用上限として 429、再試行時は星の選出失敗として 502 のまま扱う。
@@ -125,6 +126,13 @@ async function callSeedBedrock(
     // 初回は上流タイムアウト、再試行は星の選出失敗として扱う。
     if (attempt > 1) throw discoveryUpstreamError();
     throw upstreamTimeout();
+  }
+
+  if (usage === 'unavailable') {
+    // 設定済みのカウンタが使えないときは外部を呼ばない（fail-closed）。
+    // 期限切れは上のタイムアウト判定を優先する。
+    if (attempt > 1) throw discoveryUpstreamError();
+    throw new AppError(503, 'DISCOVERY_UNAVAILABLE');
   }
 
   const started = ctx.deps.now();

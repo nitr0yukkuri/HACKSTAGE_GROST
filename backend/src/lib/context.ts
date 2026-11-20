@@ -49,7 +49,7 @@ export interface AppDeps {
   booksCache: BooksSearchCache;
   /** 推薦理由キャッシュ（実行環境内メモリ）。 */
   recommendationCache: RecommendationCache;
-  /** 日次の外部呼び出し上限。テーブル未設定なら常に ok。 */
+  /** 日次の外部呼び出し上限。テーブル未設定なら常に ok。設定済みで利用不可なら外部を呼ばない。 */
   usage: UsageCounter;
 }
 

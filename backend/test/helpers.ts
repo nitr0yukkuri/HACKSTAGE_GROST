@@ -30,6 +30,7 @@ export interface EventOptions {
   isBase64Encoded?: boolean;
   query?: Record<string, string>;
   requestId?: string;
+  sourceIp?: string;
 }
 
 export function makeEvent(options: EventOptions): APIGatewayProxyEventV2 {
@@ -53,7 +54,7 @@ export function makeEvent(options: EventOptions): APIGatewayProxyEventV2 {
         method: options.method,
         path: options.path,
         protocol: 'HTTP/1.1',
-        sourceIp: '127.0.0.1',
+        sourceIp: options.sourceIp ?? '127.0.0.1',
         userAgent: 'vitest',
       },
       requestId: options.requestId ?? 'test-request-id',
@@ -115,6 +116,7 @@ export function seedEvent(
     requestId?: string;
     method?: string;
     path?: string;
+    sourceIp?: string;
   } = {},
 ): APIGatewayProxyEventV2 {
   const text = typeof body === 'string' ? body : JSON.stringify(body);
@@ -129,6 +131,7 @@ export function seedEvent(
     headers,
     body: text,
     requestId: options.requestId,
+    sourceIp: options.sourceIp,
   });
 }
 
@@ -151,6 +154,7 @@ export function booksEvent(options: {
   omitContext?: boolean;
   headerName?: string;
   requestId?: string;
+  sourceIp?: string;
 } = {}): APIGatewayProxyEventV2 {
   const query: Record<string, string> = {};
   const q = options.q === undefined ? 'プログラミング 入門' : options.q;
@@ -172,6 +176,7 @@ export function booksEvent(options: {
     headers,
     query,
     requestId: options.requestId,
+    sourceIp: options.sourceIp,
   });
 }
 
@@ -284,17 +289,22 @@ export function hangingGoogleBooks(): GoogleBooksStub {
 }
 
 export interface UsageStub extends UsageCounter {
-  calls: Array<{ kind: UsageKind; signal: AbortSignal; requestId: string }>;
+  calls: Array<{
+    kind: UsageKind;
+    signal: AbortSignal;
+    requestId: string;
+    sourceIp: string | undefined;
+  }>;
 }
 
 export function usageStub(
   answer: (kind: UsageKind) => UsageResult | Promise<UsageResult>,
 ): UsageStub {
-  const calls: Array<{ kind: UsageKind; signal: AbortSignal; requestId: string }> = [];
+  const calls: UsageStub['calls'] = [];
   return {
     calls,
-    async consume(kind, signal, requestId) {
-      calls.push({ kind, signal, requestId });
+    async consume(kind, signal, requestId, sourceIp) {
+      calls.push({ kind, signal, requestId, sourceIp });
       return answer(kind);
     },
   };

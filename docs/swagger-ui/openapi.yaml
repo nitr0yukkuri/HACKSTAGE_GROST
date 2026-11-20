@@ -18,6 +18,9 @@ info:
 
     3エンドポイント（seed・books・health）と `servers` 先頭の公開 URL は `hackathon-dev` で稼働中である。
     Qwen を使った星生成と、推薦順の選定・意図的な空結果を含む書籍推薦は同環境に反映済みである。
+    ただし、このリポジトリのフォローアップ（ネットワーク別の日次上限と、カウンタ利用不可時の
+    fail-closed）は PR の段階であり、既存の `hackathon-dev` は再デプロイするまで従来の挙動
+    （全体カウンタのみ・カウンタ障害時は fail-open）のままである。
     Swagger UI の Try it out は無効化しているが、記載の URL へ直接 HTTPS リクエストを送ることはできる。
     プレースホルダーの URL は契約参照用であり、実在しない。
 
@@ -51,8 +54,29 @@ info:
     - 推薦レスポンスは `Cache-Control: no-store`。
     - Lambda が返す JSON には、成功・アプリケーションエラーともに `requestId` を含める。
     - 推薦結果はアプリの DB に保存しない。
-    - セッション・認証・署名・暗号処理は追加しない。`X-Discovery-Context` は
+    - セッション・認証・署名は追加しない。`X-Discovery-Context` は
       無条件に信頼するトークンではなく、毎回検証する回答データである。
+
+    ## 外部呼び出しの日次上限
+
+    外部呼び出し（Bedrock・Google Books）の日次上限は Asia/Tokyo の日付で数え、
+    全体の上限と送信元ネットワーク別の上限を1つの DynamoDB トランザクションで
+    条件付き加算する。既定値は Bedrock が全体 3,000回/日・ネットワーク別 500回/日、
+    Google Books が全体 900回/日・ネットワーク別 150回/日。ネットワーク別は
+    `max(1, floor(全体上限 / 6))` である。ネットワークは IPv4 アドレス、または
+    IPv6 の /64 とし、IPv4-mapped IPv6 は IPv4 として扱う。
+
+    ネットワーク別のカウンタ項目は、JST の日付と正規化したネットワークの組から作る
+    SHA256 の値を使う（項目の TTL は2日）。日次カウンタのログには送信元 IP も
+    この値も出さない。送信元は `event.requestContext.http.sourceIp` だけを使い、
+    リクエストヘッダーからは推定しない。
+
+    全体上限またはネットワーク別上限に達した場合の応答は、エンドポイントごとに
+    下記の `429`・`502`・`200` の説明に従う。カウンタが設定済みで利用できない場合
+    （DynamoDB の障害・競合・タイムアウト、送信元 IP の欠落・不正など）は fail-closed とし、
+    新しい外部呼び出しを行わない。テーブル名が未設定のローカル開発・テストだけは
+    上限なしで通す。実行環境内メモリの検索結果・推薦理由キャッシュにヒットした結果は、
+    カウンタが利用できなくても返す。
 servers:
   - url: https://h5bu36urf3.execute-api.ap-northeast-1.amazonaws.com
     description: hackathon-dev
@@ -527,12 +551,15 @@ paths:
             ないことがある（HTMLやプレーンテキストを含む）。アプリが返す 429 は共通JSONで
             `error.code: RATE_LIMITED` である。フロントはHTTPステータスと `error.code` の
             両方で扱う。
-            API 全体の1日の外部呼び出し上限（Bedrock）に達した場合も 429 `RATE_LIMITED` を
-            返す。上限は API 全体で共有され、到達すると Asia/Tokyo の翌日まで 429 になる。
-            カウンタの障害・打ち切り時は上限を適用せず処理を続ける（fail-open）。
+            API 全体または送信元ネットワーク別の1日の外部呼び出し上限（Bedrock）に達した
+            場合も 429 `RATE_LIMITED` を返す。全体上限とネットワーク別上限
+            （`max(1, floor(全体上限 / 6))`）は Asia/Tokyo の日付で数え、到達すると
+            その日は 429 になる。上限は API 全体で共有される。
+            カウンタ自体が利用できない場合は 429 にせず、初回は 503
+            `DISCOVERY_UNAVAILABLE`、再生成の直前なら 502 `DISCOVERY_UPSTREAM_ERROR` を
+            返し、外部呼び出しを行わない（fail-closed）。テーブル未設定のローカル開発・
+            テストだけは上限なしで通す。
             スロットリングは時間をおいて再試行し、日次上限は再試行せず案内を出す。
-            seed の再生成の直前で上限に達した場合は 429 ではなく
-            502 `DISCOVERY_UPSTREAM_ERROR` を返す。
           content:
             application/json:
               schema:
@@ -568,7 +595,8 @@ paths:
             不正な結果を画面へ流さず、フロントの点数方式への隠れたフォールバックもしない。
             AI 出力が検証に不合格の場合、seed 段階の残り時間が3秒以上あれば Bedrock を
             1回だけ再生成し、それも不合格ならこのエラーを返す。AI の出力が空だった場合も
-            再生成の対象とする。
+            再生成の対象とする。再生成の直前に日次カウンタが利用できない場合も、
+            外部呼び出しを行わずこの 502 を返す。
           content:
             application/json:
               schema:
@@ -585,6 +613,10 @@ paths:
         '503':
           description: |
             Bedrock が停止している、またはスロットリングされた。フロントは再試行を案内する。
+            日次カウンタが設定済みで利用できない場合（DynamoDB の障害・競合・タイムアウト、
+            送信元 IP の欠落・不正など）も、初回の seed は外部呼び出しを行わず 503
+            `DISCOVERY_UNAVAILABLE` を返す（fail-closed）。カウンタ待ちで API 全体の期限に
+            達した場合は、この 503 より `504 UPSTREAM_TIMEOUT` を優先する。
             アプリケーションとして返す `503` は seed のみであり、
             `GET /v1/themes/{themeId}/books` は `503` を返さない。
           content:
@@ -952,12 +984,15 @@ paths:
           description: |
             リクエスト過多。API Gateway のスロットリングによる 429 は共通JSON形式でない
             ことがある。アプリが返す 429 は共通JSON（`RATE_LIMITED`）で、Google Books の
-            日次上限に達した場合である。上限は API 全体で共有され、到達すると
-            Asia/Tokyo の翌日まで 429 になる。カウンタの障害・打ち切り時は上限を適用せず
-            処理を続ける（fail-open）。フロントは HTTP ステータスと `error.code` の両方で
-            扱い、スロットリングは時間をおいて再試行、日次上限は再試行せず案内を出す。
-            理由生成の Bedrock が上限に達した場合は 429 にせず、200 と
-            `RECOMMENDATION_REASON_UNAVAILABLE` の警告を返す。
+            全体上限または送信元ネットワーク別の日次上限に達した場合である。上限は
+            Asia/Tokyo の日付で数え、ネットワーク別は `max(1, floor(全体上限 / 6))`。
+            到達するとその日は 429 になる。フロントは HTTP ステータスと `error.code` の
+            両方で扱い、スロットリングは時間をおいて再試行、日次上限は再試行せず案内を出す。
+            カウンタが利用できない場合は 429 にせず、検索キャッシュミスでは 502
+            `BOOKS_UPSTREAM_ERROR` を返して Google Books を呼ばない（fail-closed）。
+            検索結果・推薦理由のメモリキャッシュにヒットした結果は、カウンタが利用できない
+            場合も返す。理由生成の Bedrock が上限に達した場合、またはカウンタが利用できない
+            場合は 429 にせず、200 と `RECOMMENDATION_REASON_UNAVAILABLE` の警告を返す。
           content:
             application/json:
               schema:
@@ -1004,7 +1039,14 @@ paths:
                       message: 処理に失敗しました。
                       details: []
         '502':
-          description: Google Books が失敗した、または不正な結果を返した。0件扱いにしない。
+          description: |
+            Google Books が失敗した、または不正な結果を返した。0件扱いにしない。
+            日次カウンタが設定済みで利用できない場合（DynamoDB の障害・競合・タイムアウト、
+            送信元 IP の欠落・不正など）も、検索キャッシュミスでは Google Books を呼ばず
+            この 502 を返す（fail-closed）。カウンタ待ちで検索6秒の段階上限または API 全体の
+            期限に達した場合は、この 502 より `504 UPSTREAM_TIMEOUT` を優先する。
+            検索結果・推薦理由のメモリキャッシュにヒットした結果は、カウンタが利用できない
+            場合も返す。
           content:
             application/json:
               schema:

@@ -57,8 +57,9 @@ resource "aws_cloudwatch_log_group" "api_access" {
   retention_in_days = var.log_retention_days
 }
 
-# 外部呼び出し（Bedrock・Google Books）の日次カウンタ。pk は "<kind>#<YYYY-MM-DD>"（JST）。
-# 条件付き加算で上限を超えた更新を拒否し、使われない項目は TTL で消す。
+# 外部呼び出し（Bedrock・Google Books）の日次カウンタ。pk は全体が "<kind>#<YYYY-MM-DD>"、
+# 送信元ネットワーク別が "<kind>#<YYYY-MM-DD>#net#<SHA256>"（JST）。同じトランザクションの
+# 条件付き加算2件で上限を超えた更新を拒否し、使われない項目は TTL で消す。
 resource "aws_dynamodb_table" "usage" {
   name         = "${var.name_prefix}-${var.env}-usage"
   billing_mode = "PAY_PER_REQUEST"
@@ -111,7 +112,8 @@ data "aws_iam_policy_document" "lambda" {
     resources = local.bedrock_invoke_model_resources
   }
 
-  # 日次カウンタは条件付き加算（UpdateItem）だけを許可する。
+  # 日次カウンタは条件付き加算（UpdateItem）だけを許可する。TransactWriteItems の
+  # Update アクションも同じ dynamodb:UpdateItem で許可されるため、追加のアクションは要らない。
   statement {
     sid       = "ConsumeDailyUsage"
     effect    = "Allow"
