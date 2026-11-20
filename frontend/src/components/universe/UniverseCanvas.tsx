@@ -1,13 +1,16 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Tier, World } from '../../types/hoshirube'
 import { CONNECTIONS } from '../../data/connections'
 import { createRenderer } from '../../lib/webgl/renderer'
 
 export interface ViewState { x: number; y: number; z: number }
+interface SyncLink { from: string; to: string }
 interface Props {
   worlds: World[]
   tiers: Record<string, Tier>
+  completedWorldIds: ReadonlySet<string>
+  syncLinks: SyncLink[]
   selectedId: string | null
   target: ViewState
   panelOpen: boolean
@@ -17,12 +20,19 @@ interface Props {
 type RGB = [number, number, number]
 const TIER_COLOR: RGB[] = [[0.45, 0.5, 0.68], [0.55, 0.66, 0.92], [0.78, 0.9, 1]]
 const GOLD: RGB = [1, 0.72, 0.4]
+const COMPLETE: RGB = [1, 0.67, 0.28]
+const SYNC: RGB = [0.5, 0.84, 1]
 const CHILD: RGB = [0.7, 0.95, 1]
+const edgeKey = (a: string, b: string) => a < b ? `${a}:${b}` : `${b}:${a}`
 
 /** WebGL2で星と星座線を描き、ラベル(button)をHTMLで重ねる。状態はpropsから受け取るだけ */
 export default function UniverseCanvas(props: Props) {
-  const { worlds, tiers, selectedId, panelOpen, onPick } = props
+  const { worlds, tiers, completedWorldIds, syncLinks, selectedId, panelOpen, onPick } = props
   const cv = useRef<HTMLCanvasElement>(null)
+  const syncAnimationStartedAt = useRef<number | null>(null)
+  const syncSignature = useMemo(() => syncLinks.map((link) => `${link.from}>${link.to}`).join('|'), [syncLinks])
+  const syncTargetIds = useMemo(() => new Set(syncLinks.map((link) => link.to)), [syncLinks])
+  const syncEdgeKeys = useMemo(() => new Set(syncLinks.map((link) => edgeKey(link.from, link.to))), [syncLinks])
   const labels = useRef<Record<string, HTMLButtonElement | null>>({})
   const live = useRef(props)
   const scheduleRender = useRef<() => void>(() => {})
@@ -53,8 +63,11 @@ export default function UniverseCanvas(props: Props) {
     const frame = (ms: number) => {
       raf = 0
       if (document.hidden || contextLost || disposed) return
-      const { worlds, tiers, selectedId, target, panelOpen } = live.current
+      const { worlds, tiers, completedWorldIds, syncLinks, selectedId, target, panelOpen } = live.current
       const dp = devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight
+      const syncElapsed = syncAnimationStartedAt.current === null ? Number.POSITIVE_INFINITY : ms - syncAnimationStartedAt.current
+      const syncProgress = Math.min(1, Math.max(0, syncElapsed / 1800))
+      const syncPulse = !reducedMotion && syncElapsed >= 0 && syncElapsed < 1800 ? Math.sin(Math.PI * syncProgress) : 0
       if (reducedMotion) {
         view.x = target.x; view.y = target.y; view.z = target.z
       } else {
@@ -69,24 +82,54 @@ export default function UniverseCanvas(props: Props) {
         const x = cx + (w.position.x - view.x) * sx * view.z, y = cy + (w.position.y - view.y) * sy * view.z
         pos.set(w.id, [x, y])
         const el = labels.current[w.id]
-        if (el) { el.style.transform = `translate(${x - 18}px,${y - 18}px)`; el.style.opacity = String(k[w.id]) }
+        if (el) {
+          el.style.transform = `translate(${x - 18}px,${y - 18}px)`
+          el.style.opacity = String(k[w.id])
+          const labelWidth = el.querySelector('span')?.getBoundingClientRect().width ?? 0
+          el.classList.toggle('label-left', x + 30 + labelWidth > W - 12 && x - 30 - labelWidth > 12)
+        }
       })
 
       const pts: number[] = []
       bg.forEach((s) => pts.push(s[0] * W * dp, s[1] * H * dp, s[2] * dp, s[3], s[4], 0.6, 0.75, 1))
       worlds.forEach((w) => {
         const t = tiers[w.id] ?? 0, kk = k[w.id], [x, y] = pos.get(w.id)!, sel = w.id === selectedId
-        const c = sel ? GOLD : w.level === 2 ? CHILD : TIER_COLOR[t]
-        const size = (w.level === 2 ? 38 : [24, 40, 62][t]) * (sel ? 1.3 : 1) * kk
-        pts.push(x * dp, y * dp, size * dp, [0.5, 0.85, 1][t] * (w.level === 2 ? 0.9 : 1) * kk, (x * 0.013) % 1, ...c)
+        const complete = completedWorldIds.has(w.id)
+        const synced = syncTargetIds.has(w.id)
+        const c = complete ? COMPLETE : synced ? SYNC : sel ? GOLD : w.level === 2 ? CHILD : TIER_COLOR[t]
+        const completionScale = complete ? (w.level === 1 ? 1.5 : 1.25) : 1
+        const syncScale = synced ? 1.12 + syncPulse * 0.2 : 1
+        const size = (w.level === 2 ? 38 : [24, 40, 62][t]) * (sel ? 1.3 : 1) * completionScale * syncScale * kk
+        const baseBrightness = [0.5, 0.85, 1][t] * (w.level === 2 ? 0.9 : 1) * kk
+        const brightness = complete
+          ? Math.min(1, baseBrightness * 1.35)
+          : synced
+            ? Math.min(1, baseBrightness * (1.12 + syncPulse * 0.25))
+            : baseBrightness
+        pts.push(x * dp, y * dp, size * dp, brightness, (x * 0.013) % 1, ...c)
       })
+
+      if (syncPulse > 0.01) {
+        syncLinks.forEach(({ from, to }) => {
+          const source = pos.get(from), destination = pos.get(to)
+          if (!source || !destination) return
+          const easedProgress = syncProgress * syncProgress * (3 - 2 * syncProgress)
+          const x = source[0] + (destination[0] - source[0]) * easedProgress
+          const y = source[1] + (destination[1] - source[1]) * easedProgress
+          pts.push(x * dp, y * dp, (9 + syncPulse * 5) * dp, syncPulse * 0.95, (x * 0.013) % 1, 0.58, 0.88, 1)
+        })
+      }
 
       const ln: number[] = []
       const seg = (a: string, b: string, al: number) => {
         const p = pos.get(a), q = pos.get(b)
         if (p && q) ln.push(p[0] * dp, p[1] * dp, al, q[0] * dp, q[1] * dp, al)
       }
-      CONNECTIONS.forEach(([a, b]) => seg(a, b, [0.1, 0.28, 0.7][Math.min(tiers[a] ?? 0, tiers[b] ?? 0)]))
+      CONNECTIONS.forEach(([a, b]) => {
+        const baseAlpha = [0.1, 0.28, 0.7][Math.min(tiers[a] ?? 0, tiers[b] ?? 0)]
+        const synchronizedAlpha = syncEdgeKeys.has(edgeKey(a, b)) ? 0.5 + syncPulse * 0.45 : 0
+        seg(a, b, Math.max(baseAlpha, synchronizedAlpha))
+      })
       worlds.forEach((w) => w.parentId && seg(w.parentId, w.id, 0.75 * k[w.id]))
 
       renderer.draw(pts, ln, reducedMotion ? 0 : ms / 1000)
@@ -135,7 +178,12 @@ export default function UniverseCanvas(props: Props) {
 
   useEffect(() => {
     scheduleRender.current()
-  }, [props.worlds, props.tiers, props.selectedId, props.target, props.panelOpen])
+  }, [props.worlds, props.tiers, props.completedWorldIds, props.syncLinks, props.selectedId, props.target, props.panelOpen])
+
+  useEffect(() => {
+    syncAnimationStartedAt.current = syncSignature ? performance.now() : null
+    scheduleRender.current()
+  }, [syncSignature])
 
   return (
     <>
@@ -146,14 +194,19 @@ export default function UniverseCanvas(props: Props) {
         </div>
       )}
       <div className={`lab${noGl || glError ? ` fallback${panelOpen ? ' panel-open' : ''}` : ''}`}>
-        {worlds.map((w) => (
-          <button key={w.id} ref={(el) => { labels.current[w.id] = el }} aria-label={w.name}
-            aria-pressed={w.id === selectedId}
-            className={`n t${tiers[w.id] ?? 0}${w.level === 2 ? ' lv2' : ''}${w.id === selectedId ? ' sel' : ''}`}
-            onClick={() => onPick(w.id)}>
-            <span>{w.name}</span>
-          </button>
-        ))}
+        {worlds.map((w) => {
+          const complete = completedWorldIds.has(w.id)
+          const synced = syncTargetIds.has(w.id)
+          const detail = complete ? '、読了済み' : synced ? '、新しいつながり' : ''
+          return (
+            <button key={w.id} ref={(el) => { labels.current[w.id] = el }} aria-label={`${w.name}${detail}`}
+              aria-pressed={w.id === selectedId}
+              className={`n t${tiers[w.id] ?? 0}${w.level === 2 ? ' lv2' : ''}${w.id === selectedId ? ' sel' : ''}${complete ? ' is-complete' : ''}${synced ? ' is-synced' : ''}`}
+              onClick={() => onPick(w.id)}>
+              <span>{w.name}</span>
+            </button>
+          )
+        })}
       </div>
     </>
   )

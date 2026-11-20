@@ -256,25 +256,45 @@ export function recommendNextInWorld(worldId: string, history: ReadEntry[], limi
   return booksForWorld(worldId).filter((b) => !readIds.has(b.id)).slice(0, limit)
 }
 
+
+/**
+ * 読書履歴をもとに、現在とは異なる大ジャンルの本を1冊推薦する。
+ * 読了済みの本と現在の大ジャンルの本は候補から除外する。
+ */
 export function recommendOtherWorld(
-  currentWorldId: string,
+  worldId: string,
   history: ReadEntry[],
 ): { worldId: string; book: Book } | null {
-  const readIds = new Set(history.map((h) => h.bookId))
-  const current = WORLDS.find((w) => w.id === currentWorldId)
-  const currentRootId = current?.parentId ?? currentWorldId
+  if (history.length === 0) return null
 
-  for (const genre of GENRES) {
-    if (genre.id === currentRootId) continue
+  const currentGenre = genreOfWorld(worldId)
+  const readIds = new Set(history.map((entry) => entry.bookId))
+  const candidates = BOOKS.filter(
+    (book) =>
+      !readIds.has(book.id) &&
+      book.worldIds.length > 0 &&
+      book.worldIds.every(
+        (id) => genreOfWorld(id) !== currentGenre,
+      ),
+  )
 
-    const book = booksForWorld(genre.id).find(
-      (b) => !readIds.has(b.id),
+  const recommended = recommendBooks(history, {}, candidates.length, candidates)
+    .find((book) =>
+      book.worldIds.some(
+        (id) => genreOfWorld(id) !== currentGenre,
+      ),
     )
 
-    if (book) {
-      return { worldId: genre.id, book }
-    }
-  }
+  if (!recommended) return null
 
-  return null
+  const destinationId = recommended.worldIds.find(
+    (id) => genreOfWorld(id) !== currentGenre,
+  )
+
+  if (!destinationId) return null
+
+  return {
+    worldId: destinationId,
+    book: recommended,
+  }
 }

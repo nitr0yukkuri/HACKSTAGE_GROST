@@ -86,21 +86,26 @@ export default function WorldDetailPanel({
 
   return (
     <aside className={`panel${open ? '' : ' off'}`}>
-      <button type="button" className="x" aria-label="閉じる" onClick={onClose}>
-        ×
-      </button>
-
-      <div className="ph">
-        <div>
-          <h3>{world.name}</h3>
-          <p>{world.description}</p>
-          <span className={`tg t${tier}`}>
-            {tierLabel ?? TIER_LABEL[tier]}
-          </span>
+      <div className="panel-head">
+        <button
+          type="button"
+          className="x"
+          aria-label="閉じる"
+          onClick={onClose}
+        >
+          ×
+        </button>
+        <div className="ph">
+          <div>
+            <h3>{world.name}</h3>
+            <p>{world.description}</p>
+            <span className={`tg t${tier}`}>
+              {tierLabel ?? TIER_LABEL[tier]}
+            </span>
+          </div>
         </div>
+        <h4 className="panel-section-title">この星につながる本</h4>
       </div>
-
-      <h4>この星につながる本</h4>
 
       {loading && (
         <p className="book-state" role="status" aria-live="polite">
@@ -133,18 +138,24 @@ export default function WorldDetailPanel({
         </p>
       )}
 
-      {!loading && renderBooks(otherBooks)}
+      {!loading && !error && renderBooks(otherBooks)}
 
       {!loading && !error && hasReadInWorld && (
         <>
           {recs.length > 0 ? (
             <>
-              <h4>✨ 次におすすめの本</h4>
+              <h4 className="panel-section-title">次の一冊</h4>
               {renderBooks(recs)}
             </>
-          ) : !apiMode && (
+          ) : !apiMode ? (
             <>
-              <p>🎉 この星の本はすべて読了しました！</p>
+              <span
+                className="tg world-complete"
+                role="status"
+                aria-label="この星の本をすべて読了"
+              >
+                完読
+              </span>
               {otherWorld && (
                 <section className="other-world">
                   <h4>✨ こちらの世界もいかがですか？</h4>
@@ -167,7 +178,7 @@ export default function WorldDetailPanel({
                 </section>
               )}
             </>
-          )}
+          ) : null}
         </>
       )}
 
