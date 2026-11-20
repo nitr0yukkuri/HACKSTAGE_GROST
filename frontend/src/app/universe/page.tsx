@@ -5,6 +5,7 @@ import Logo from '../../components/common/Logo'
 import UniverseCanvas, { type ViewState } from '../../components/universe/UniverseCanvas'
 import WorldDetailPanel from '../../components/universe/WorldDetailPanel'
 import { WORLDS } from '../../data/worlds'
+import { CONNECTIONS } from '../../data/connections'
 import {
   booksForWorld,
   calcScores,
@@ -21,6 +22,7 @@ import type { OnboardingAnswers } from '../../types/hoshirube'
 
 const HOME: ViewState = { x: 0, y: 0, z: 1 }
 const clamp = (value: number, limit = 1.3) => Math.min(limit, Math.max(-limit, value))
+interface SyncLink { from: string; to: string }
 interface ActivePan { pointerId: number; lastX: number; lastY: number }
 interface TouchPoint { x: number; y: number; pendingTap: boolean; pointerType: string }
 interface ActivePinch {
@@ -54,6 +56,13 @@ function Universe() {
   )
 
   const tiers = useMemo(() => tiersFor(scores), [scores])
+  const completedWorldIds = useMemo(
+    () => new Set(WORLDS.filter((candidate) => {
+      const books = booksForWorld(candidate.id)
+      return books.length > 0 && books.every((book) => readIds.has(book.id))
+    }).map((candidate) => candidate.id)),
+    [readIds],
+  )
 
   const onRead = (bookId: string) => {
     setHistory((prev) =>
@@ -83,6 +92,25 @@ function Universe() {
   const world = WORLDS.find((w) => w.id === selectedId)!
   const root = world.parentId ? WORLDS.find((w) => w.id === world.parentId)! : world
   const visible = WORLDS.filter((w) => w.level === 1 || w.parentId === root.id) // 選んだ星の中ジャンルだけ展開
+  const syncLinks = useMemo<SyncLink[]>(() => {
+    const usedTargets = new Set<string>()
+    return WORLDS.filter((candidate) => candidate.level === 1 && completedWorldIds.has(candidate.id))
+      .flatMap((source) => {
+        const neighbors = CONNECTIONS.flatMap(([a, b]) =>
+          a === source.id ? [b] : b === source.id ? [a] : [],
+        )
+          .filter((id) =>
+            !completedWorldIds.has(id) &&
+            !usedTargets.has(id) &&
+            booksForWorld(id).length > 0,
+          )
+          .sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0))
+        const targetId = neighbors[0]
+        if (!targetId) return []
+        usedTargets.add(targetId)
+        return [{ from: source.id, to: targetId }]
+      })
+  }, [completedWorldIds, scores])
 
   const focusWorld = useCallback((worldId: string, zoomLevel = 1, panelVisible = panelOpen) => {
     if (typeof window === 'undefined' || window.innerWidth > 760) return
@@ -306,7 +334,16 @@ function Universe() {
       <div className="map" ref={mapRef} onPointerDown={startPan} onPointerMove={movePan}
         onPointerUp={stopPan} onPointerCancel={stopPan} onLostPointerCapture={stopPan}>
         {answersReady ? <>
-          <UniverseCanvas worlds={visible} tiers={tiers} selectedId={selectedId} target={target} panelOpen={panelOpen} onPick={pick} />
+          <UniverseCanvas
+            worlds={visible}
+            tiers={tiers}
+            completedWorldIds={completedWorldIds}
+            syncLinks={syncLinks}
+            selectedId={selectedId}
+            target={target}
+            panelOpen={panelOpen}
+            onPick={pick}
+          />
           <div className="zc">
             <button aria-label="拡大" onClick={() => zoom(1.3)}>＋</button>
             <button aria-label="縮小" onClick={() => zoom(1 / 1.3)}>－</button>

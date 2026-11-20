@@ -19,6 +19,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 .scr{position:absolute;inset:0;z-index:1;display:flex;animation:in .5s;flex-direction:column;align-items:center;justify-content:center;text-align:center}
 
 @keyframes in{from{opacity:0}}
+@keyframes constellation-complete{0%{opacity:0;transform:translate(-50%,-50%) scale(.35)}18%{opacity:.95}100%{opacity:0;transform:translate(-50%,-50%) scale(2)}}
+@keyframes constellation-sync{0%{opacity:0;transform:translate(-50%,-50%) scale(.45)}24%{opacity:.9}100%{opacity:0;transform:translate(-50%,-50%) scale(1.85)}}
 h1{margin:14px 0 0;font-size:clamp(30px,6vw,46px);font-weight:300;letter-spacing:.34em;padding-left:.34em}
 .tag-l{margin:22px 0 0;color:#dbe6ff}
 .pill{margin-top:26px;padding:13px 36px;border-radius:999px;border:1px solid rgba(150,190,255,.6);background:rgba(30,50,100,.55);font-weight:600;box-shadow:0 0 26px rgba(80,130,255,.35);display:inline-flex;gap:10px;align-items:center}
@@ -64,6 +66,14 @@ h2{margin:22px 0 6px;font-size:clamp(19px,3.6vw,24px);line-height:1.6}
 .n.t0 span{color:#7f90b5}
 .n.lv2 span{font-size:12.5px;color:#d6f4ff}
 .n.sel span{color:var(--gold);font-size:16px;font-weight:700}
+.n.is-complete{filter:drop-shadow(0 0 9px rgba(255,184,103,.78))}
+.n.is-synced{filter:drop-shadow(0 0 9px rgba(112,211,255,.82))}
+.n.is-complete span,.n.is-complete.sel span{color:#ffd093;font-weight:700}
+.n.is-synced span{color:#9edfff}
+.n.is-complete::before,.n.is-synced::after{content:"";position:absolute;left:50%;top:50%;width:56px;height:56px;border:1px solid currentColor;border-radius:50%;pointer-events:none;opacity:0}
+.n.is-complete::before{color:rgba(255,184,103,.9);animation:constellation-complete 1.25s ease-out 1}
+.n.is-synced::after{color:rgba(112,211,255,.9);animation:constellation-sync 1.55s ease-out 1}
+.n.is-synced:not(.sel) span{color:#9edfff}
 .zc{position:absolute;left:16px;top:14px;display:flex;flex-direction:column;border:1px solid var(--ln);border-radius:12px;background:rgba(10,18,40,.6);overflow:hidden}
 .zc button{width:40px;height:40px;border:0;background:none;font-size:18px}
 .lgd{position:absolute;left:16px;bottom:16px;padding:12px 16px;border:1px solid var(--ln);border-radius:14px;background:rgba(10,18,40,.65);font-size:12.5px;display:grid;gap:6px}
