@@ -1,5 +1,6 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { isIP } from 'node:net';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { DynamoDBClient, TransactWriteItemsCommand } from '@aws-sdk/client-dynamodb';
 
@@ -16,7 +17,10 @@ import type { Logger } from './log.js';
  *   日次カウンタのログに生 IP とハッシュ値は出さない。
  * - 全体上限に達していれば `TransactionCanceledException` の CancellationReasons が
  *   `ConditionalCheckFailed` になり `exceeded` を返す。
- * - IP の欠落・不正、カウンタ側の障害・競合・打ち切りは `unavailable`。
+ * - トランザクションの競合（CancellationReasons の `TransactionConflict`、または
+ *   `TransactionConflictException`）だけは、同じコマンドと同じ ClientRequestToken で
+ *   短いジッター待ちを挟んで最大2回再試行する。上限到達・その他の例外は再試行しない。
+ * - IP の欠落・不正、カウンタ側の障害・競合の再試行枯渇・打ち切りは `unavailable`。
  *   設定済みのテーブルでは外部呼び出しを止める（fail-closed）。
  * - テーブル名が未設定なら常に `ok`（ローカル開発とテスト用）。
  *
@@ -59,6 +63,11 @@ const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 /** ネットワーク別上限は全体上限の 1/6（最低1回）。 */
 const PER_NETWORK_DIVISOR = 6;
+
+/** TransactionConflict の再試行回数と待ち時間（既存の 500ms AbortSignal 内に収める）。 */
+const MAX_TRANSACTION_CONFLICT_RETRIES = 2;
+const TRANSACTION_CONFLICT_RETRY_MIN_MS = 20;
+const TRANSACTION_CONFLICT_RETRY_JITTER_MS = 10;
 
 export interface UsageLimits {
   bedrock: number;
@@ -117,35 +126,65 @@ export function createUsageCounter(options: UsageCounterOptions): UsageCounter {
         options.limits[kind],
         networkGroup,
       );
-      try {
-        await getClient().send(command, { abortSignal: signal });
-        return 'ok';
-      } catch (error) {
-        const errorName = errorNameOf(error);
-        if (errorName === 'TransactionCanceledException') {
+
+      for (let attempt = 0; attempt <= MAX_TRANSACTION_CONFLICT_RETRIES; attempt += 1) {
+        // 打ち切り後に SDK を呼ばない（待ち中の打ち切りも下の delay で受ける）。
+        if (signal.aborted) {
+          options.logger.warn({
+            event: 'usage_counter_unavailable',
+            kind,
+            requestId,
+            errorName: 'AbortError',
+          });
+          return 'unavailable';
+        }
+
+        try {
+          await getClient().send(command, { abortSignal: signal });
+          return 'ok';
+        } catch (error) {
           if (hasConditionalCheckFailure(error)) {
             options.logger.warn({ event: 'usage_limit_exceeded', kind, requestId });
             return 'exceeded';
           }
-          // 競合・理由なしなどは上限到達と区別できないため、外部呼び出しを止める。
+
+          const errorName = errorNameOf(error);
+          const conflict = isTransactionConflict(error);
+          if (conflict && attempt < MAX_TRANSACTION_CONFLICT_RETRIES) {
+            try {
+              await delay(transactionConflictRetryDelayMs(), undefined, { signal });
+            } catch (delayError) {
+              options.logger.warn({
+                event: 'usage_counter_unavailable',
+                kind,
+                requestId,
+                errorName: errorNameOf(delayError),
+              });
+              return 'unavailable';
+            }
+            // 同じ command（同じ ClientRequestToken）のまま再試行する。
+            continue;
+          }
+
+          const reason =
+            conflict
+              ? 'transaction_conflict'
+              : errorName === 'TransactionCanceledException'
+                ? 'transaction_canceled'
+                : undefined;
           options.logger.warn({
             event: 'usage_counter_unavailable',
             kind,
             requestId,
             errorName,
-            reason: 'transaction_canceled',
+            ...(reason === undefined ? {} : { reason }),
           });
           return 'unavailable';
         }
-        // 例外の内容は出さない（テーブル名・値・ARN を含み得るため）。種別だけ残す。
-        options.logger.warn({
-          event: 'usage_counter_unavailable',
-          kind,
-          requestId,
-          errorName,
-        });
-        return 'unavailable';
       }
+
+      // ループは必ず return する。念のため fail-closed に倒す。
+      return 'unavailable';
     },
   };
 }
@@ -162,6 +201,8 @@ function buildCommand(
   const networkLimit = perNetworkDailyLimit(limit);
 
   return new TransactWriteItemsCommand({
+    // 再試行しても同じトランザクションとして扱われるよう、明示的なランダム値を付ける。
+    ClientRequestToken: randomUUID(),
     TransactItems: [
       {
         Update: updateInput(
@@ -302,11 +343,34 @@ function errorNameOf(error: unknown): string {
  * 理由が無い・配列でない場合は上限到達と判断しない（fail-closed 側に倒す）。
  */
 function hasConditionalCheckFailure(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
+  return cancellationReasonCodes(error).includes('ConditionalCheckFailed');
+}
+
+/** TransactionConflict は取り消し理由と名前付き例外の両方で通知され得る。 */
+function isTransactionConflict(error: unknown): boolean {
+  const errorName = errorNameOf(error);
+  if (errorName === 'TransactionConflictException') return true;
+  return (
+    errorName === 'TransactionCanceledException' &&
+    cancellationReasonCodes(error).includes('TransactionConflict')
+  );
+}
+
+function cancellationReasonCodes(error: unknown): string[] {
+  if (typeof error !== 'object' || error === null) return [];
   const reasons = (error as { CancellationReasons?: unknown }).CancellationReasons;
-  if (!Array.isArray(reasons)) return false;
-  return reasons.some((reason) => {
-    if (typeof reason !== 'object' || reason === null) return false;
-    return (reason as { Code?: unknown }).Code === 'ConditionalCheckFailed';
+  if (!Array.isArray(reasons)) return [];
+  return reasons.flatMap((reason) => {
+    if (typeof reason !== 'object' || reason === null) return [];
+    const code = (reason as { Code?: unknown }).Code;
+    return typeof code === 'string' ? [code] : [];
   });
+}
+
+/** 既存の 500ms シグナル内に収まる短いジッター待ち。 */
+function transactionConflictRetryDelayMs(): number {
+  return (
+    TRANSACTION_CONFLICT_RETRY_MIN_MS +
+    Math.floor(Math.random() * TRANSACTION_CONFLICT_RETRY_JITTER_MS)
+  );
 }

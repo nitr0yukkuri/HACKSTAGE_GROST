@@ -88,6 +88,15 @@ function transactionCanceled(reasons?: unknown): Error {
   return error;
 }
 
+function transactionConflictException(): Error {
+  const error = new Error('transaction conflict');
+  error.name = 'TransactionConflictException';
+  return error;
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 describe('formatJstDate', () => {
   it('UTC 15:00 を境に Asia/Tokyo の日付が切り替わる', () => {
     expect(formatJstDate(Date.UTC(2026, 10, 19, 14, 59, 59))).toBe('2026-11-19');
@@ -146,6 +155,7 @@ describe('createUsageCounter', () => {
     ).resolves.toBe('ok');
 
     expect(commands).toHaveLength(1);
+    expect(commands[0]?.input.ClientRequestToken).toMatch(UUID_PATTERN);
     const updates = updatesOf(commands[0]);
     expect(updates).toHaveLength(2);
 
@@ -252,7 +262,7 @@ describe('createUsageCounter', () => {
 
   it('CancellationReasons に ConditionalCheckFailed があれば exceeded', async () => {
     const { logger, records } = recordingLogger();
-    const { client } = fakeClient(async () => {
+    const { client, commands } = fakeClient(async () => {
       throw transactionCanceled([{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }]);
     });
     const counter = makeCounter(client, { logger });
@@ -260,22 +270,127 @@ describe('createUsageCounter', () => {
     await expect(
       counter.consume('bedrock', AbortSignal.timeout(1_000), 'req-3', '192.0.2.10'),
     ).resolves.toBe('exceeded');
+    expect(commands).toHaveLength(1);
     expect(records).toEqual([
       { event: 'usage_limit_exceeded', kind: 'bedrock', requestId: 'req-3' },
     ]);
   });
 
-  it('トランザクションの競合・理由なし・その他の理由は unavailable', async () => {
+  const conflictForms: Array<{ name: string; makeError: () => Error }> = [
+    {
+      name: 'CancellationReasons の TransactionConflict',
+      makeError: () => transactionCanceled([{ Code: 'None' }, { Code: 'TransactionConflict' }]),
+    },
+    {
+      name: 'TransactionConflictException',
+      makeError: transactionConflictException,
+    },
+  ];
+
+  for (const form of conflictForms) {
+    it(`${form.name} は同じコマンドで1回再試行して成功できる`, async () => {
+      let calls = 0;
+      const { client, commands } = fakeClient(async () => {
+        calls += 1;
+        if (calls === 1) throw form.makeError();
+        return {};
+      });
+      const counter = makeCounter(client);
+
+      await expect(
+        counter.consume('bedrock', AbortSignal.timeout(1_000), 'req-retry', '192.0.2.10'),
+      ).resolves.toBe('ok');
+
+      expect(commands).toHaveLength(2);
+      expect(commands[1]).toBe(commands[0]);
+      expect(commands[0]?.input.ClientRequestToken).toMatch(UUID_PATTERN);
+      expect(commands[1]?.input.ClientRequestToken).toBe(
+        commands[0]?.input.ClientRequestToken,
+      );
+    });
+
+    it(`${form.name} が続く場合は2回で打ち切り unavailable`, async () => {
+      const { logger, records } = recordingLogger();
+      const { client, commands } = fakeClient(async () => {
+        throw form.makeError();
+      });
+      const counter = makeCounter(client, { logger });
+
+      await expect(
+        counter.consume('bedrock', AbortSignal.timeout(1_000), 'req-cap', '192.0.2.10'),
+      ).resolves.toBe('unavailable');
+
+      expect(commands).toHaveLength(3);
+      expect(records).toEqual([
+        {
+          event: 'usage_counter_unavailable',
+          kind: 'bedrock',
+          requestId: 'req-cap',
+          errorName: form.makeError().name,
+          reason: 'transaction_conflict',
+        },
+      ]);
+    });
+  }
+
+  it('再試行待ちで AbortSignal が打ち切られたら再送せず unavailable', async () => {
+    const { logger, records } = recordingLogger();
+    const { client, commands } = fakeClient(async () => {
+      throw transactionCanceled([{ Code: 'TransactionConflict' }]);
+    });
+    const counter = makeCounter(client, { logger });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1);
+
+    try {
+      await expect(
+        counter.consume('bedrock', controller.signal, 'req-abort-retry', '192.0.2.10'),
+      ).resolves.toBe('unavailable');
+    } finally {
+      clearTimeout(timer);
+    }
+
+    expect(commands).toHaveLength(1);
+    expect(records).toEqual([
+      {
+        event: 'usage_counter_unavailable',
+        kind: 'bedrock',
+        requestId: 'req-abort-retry',
+        errorName: 'AbortError',
+      },
+    ]);
+  });
+
+  it('最初から打ち切られていれば SDK を呼ばず unavailable', async () => {
+    const { logger, records } = recordingLogger();
+    const { client, commands } = fakeClient();
+    const counter = makeCounter(client, { logger });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      counter.consume('bedrock', controller.signal, 'req-aborted', '192.0.2.10'),
+    ).resolves.toBe('unavailable');
+
+    expect(commands).toHaveLength(0);
+    expect(records[0]).toMatchObject({
+      event: 'usage_counter_unavailable',
+      kind: 'bedrock',
+      requestId: 'req-aborted',
+      errorName: 'AbortError',
+    });
+  });
+
+  it('理由なし・競合以外の取り消し理由は再試行せず unavailable', async () => {
     const cases: unknown[] = [
       undefined,
       [],
       [{ Code: 'None' }, { Code: 'None' }],
-      [{ Code: 'TransactionConflict' }],
       [{ Code: 'ThrottlingError' }],
     ];
     for (const reasons of cases) {
       const { logger, records } = recordingLogger();
-      const { client } = fakeClient(async () => {
+      const { client, commands } = fakeClient(async () => {
         throw transactionCanceled(reasons);
       });
       const counter = makeCounter(client, { logger });
@@ -283,6 +398,7 @@ describe('createUsageCounter', () => {
       await expect(
         counter.consume('google_books', AbortSignal.timeout(1_000), 'req-4', '203.0.113.5'),
       ).resolves.toBe('unavailable');
+      expect(commands).toHaveLength(1);
       expect(records[0]).toMatchObject({
         event: 'usage_counter_unavailable',
         kind: 'google_books',
@@ -292,9 +408,9 @@ describe('createUsageCounter', () => {
     }
   });
 
-  it('その他の例外は unavailable（fail-closed）にして kind と errorName だけログに出す', async () => {
+  it('その他の例外は再試行せず unavailable（fail-closed）にして kind と errorName だけログに出す', async () => {
     const { logger, records } = recordingLogger();
-    const { client } = fakeClient(async () => {
+    const { client, commands } = fakeClient(async () => {
       const error = new Error('table not found: hoshirube-dev-usage');
       error.name = 'ResourceNotFoundException';
       throw error;
@@ -304,6 +420,7 @@ describe('createUsageCounter', () => {
     await expect(
       counter.consume('google_books', AbortSignal.timeout(1_000), 'req-5', '203.0.113.5'),
     ).resolves.toBe('unavailable');
+    expect(commands).toHaveLength(1);
     expect(records).toEqual([
       {
         event: 'usage_counter_unavailable',
