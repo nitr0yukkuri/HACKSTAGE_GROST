@@ -6,6 +6,7 @@ export interface World {
   id: string
   name: string
   description: string
+  searchQuery: string
   level: WorldLevel
   parentId: string | null
   position: { x: number; y: number }
@@ -14,10 +15,13 @@ export interface World {
 
 export interface Book {
   id: string
+  source: 'google_books' | 'local_demo'
   title: string
-  author: string
-  description: string
-  coverUrl?: string
+  authors: string[]
+  coverUrl: string | null
+  description: string | null
+  recommendationReason: string | null
+  infoUrl: string | null
   worldIds: string[]
 }
 

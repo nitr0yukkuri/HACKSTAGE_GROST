@@ -1,24 +1,21 @@
 'use client'
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Link from 'next/link'
-import Logo from '../../components/common/Logo'
+import AppHeader from '../../components/common/AppHeader'
 import UniverseCanvas, { type ViewState } from '../../components/universe/UniverseCanvas'
 import WorldDetailPanel from '../../components/universe/WorldDetailPanel'
 import { WORLDS } from '../../data/worlds'
+import { booksForWorld, calcScores, decodeAnswers, emptyOnboardingAnswers, initialWorldId, loadOnboardingAnswers, tiersFor } from '../../lib/recommendations'
 import {
-  booksForWorld,
-  calcScores,
-  decodeAnswers,
-  emptyOnboardingAnswers,
-  initialWorldId,
-  loadOnboardingAnswers,
-  tiersFor,
   applyReadHistory,
   recommendNextInWorld,
   recommendOtherWorld,
   type ReadEntry,
 } from '../../lib/recommendations'
-import type { OnboardingAnswers } from '../../types/hoshirube'
+import useLibrary from '../../lib/useLibrary'
+import { getThemeBooks, isDiscoveryApiConfigured, loadDiscoverySession, type BookRecommendation, type DiscoverySession } from '../../lib/api/discovery'
+import { libraryBookKey } from '../../lib/library-store'
+import type { Book, OnboardingAnswers, Tier } from '../../types/hoshirube'
 
 const HOME: ViewState = { x: 0, y: 0, z: 1 }
 interface ActivePan { pointerId: number; lastX: number; lastY: number }
@@ -36,13 +33,34 @@ interface ActivePinch {
 function Universe() {
   const [answers, setAnswers] = useState<OnboardingAnswers>(emptyOnboardingAnswers)
   const [answersReady, setAnswersReady] = useState(false)
+  const apiConfigured = isDiscoveryApiConfigured()
+  const [discoverySession, setDiscoverySession] = useState<DiscoverySession | null>(null)
+  const [discoveryReady, setDiscoveryReady] = useState(false)
+  const [bookResult, setBookResult] = useState<BookRecommendation | null>(null)
+  const [bookLoading, setBookLoading] = useState(false)
+  const [bookError, setBookError] = useState<string | null>(null)
+  const [bookRetry, setBookRetry] = useState(0)
+  const bookCache = useRef(new Map<string, BookRecommendation>())
   useEffect(() => {
     setAnswers(decodeAnswers(loadOnboardingAnswers()))
+    setDiscoverySession(apiConfigured ? loadDiscoverySession() : null)
     setAnswersReady(true)
-  }, [])
+    setDiscoveryReady(true)
+  }, [apiConfigured])
+  const { entries: library, save: saveBook, remove: removeBook, setReadStatus } = useLibrary()
   const baseScores = useMemo(() => calcScores(answers), [answers])
-  const [history, setHistory] = useState<ReadEntry[]>([])
-  const [lastReadId, setLastReadId] = useState<string | null>(null)
+
+  const history = useMemo<ReadEntry[]>(
+    () => Object.values(library)
+      .filter((entry) =>
+        entry.status === 'read' && entry.book.source === 'local_demo'
+      )
+      .map((entry) => ({
+        bookId: entry.book.id,
+        readAt: entry.savedAt,
+      })),
+    [library],
+  )
 
   const readIds = useMemo(
     () => new Set(history.map((entry) => entry.bookId)),
@@ -53,17 +71,14 @@ function Universe() {
     () => applyReadHistory(baseScores, history),
     [baseScores, history],
   )
-
-  const tiers = useMemo(() => tiersFor(scores), [scores])
-
-  const onRead = (bookId: string) => {
-    setHistory((prev) =>
-      prev.some((entry) => entry.bookId === bookId)
-        ? prev
-        : [...prev, { bookId, readAt: Date.now() }],
-    )
-    setLastReadId(bookId)
-  }
+  const localTiers = useMemo(() => tiersFor(scores), [scores])
+  const tiers = useMemo(() => {
+    if (!apiConfigured || !discoverySession) return localTiers
+    const apiTiers: Record<string, Tier> = Object.fromEntries(WORLDS.map((item) => [item.id, 0]))
+    discoverySession.seed.themes.forEach((theme, index) => { apiTiers[theme.themeId] = index === 0 ? 2 : 1 })
+    WORLDS.filter((item) => item.parentId).forEach((item) => { apiTiers[item.id] = apiTiers[item.parentId!] })
+    return apiTiers
+  }, [apiConfigured, discoverySession, localTiers])
   const [picked, setPicked] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(true)
   const [target, setTarget] = useState<ViewState>(HOME)
@@ -75,13 +90,11 @@ function Universe() {
   const finishPointerRef = useRef<(pointerId: number, map: HTMLDivElement) => void>(() => {})
   targetRef.current = target
 
-  const selectedId = picked ?? initialWorldId(baseScores)
-
+  const selectedId = picked ?? (apiConfigured && discoverySession ? discoverySession.seed.themes[0].themeId : initialWorldId(scores))
   const recs = useMemo(
     () => recommendNextInWorld(selectedId, history),
     [selectedId, history],
   )
-
   const otherWorld = useMemo(
     () => recommendOtherWorld(selectedId, history),
     [selectedId, history],
@@ -91,8 +104,44 @@ function Universe() {
   const root = world.parentId ? WORLDS.find((w) => w.id === world.parentId)! : world
   const kids = WORLDS.filter((w) => w.parentId === root.id)
   const visible = WORLDS.filter((w) => w.level === 1 || w.parentId === root.id) // 選んだ星の中ジャンルだけ展開
+  const searchQuery = discoverySession?.seed.themes.find((theme) => theme.themeId === world.id)?.searchQuery ?? world.searchQuery
+
+  useEffect(() => {
+    if (!apiConfigured || !discoverySession || !discoveryReady) return
+    const cacheKey = JSON.stringify([discoverySession.context, world.id, searchQuery])
+    const cached = bookCache.current.get(cacheKey)
+    if (cached) {
+      setBookResult(cached)
+      setBookError(null)
+      setBookLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    setBookResult(null)
+    setBookError(null)
+    setBookLoading(true)
+    getThemeBooks(world.id, searchQuery, discoverySession.context, controller.signal)
+      .then((result) => {
+        bookCache.current.set(cacheKey, result)
+        setBookResult(result)
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setBookError(error instanceof Error ? error.message : '本を取得できませんでした。再試行してください。')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setBookLoading(false)
+      })
+    return () => controller.abort()
+  }, [apiConfigured, discoveryReady, discoverySession, world.id, searchQuery, bookRetry])
 
   const pick = (id: string) => { setPicked(id); setPanelOpen(true) }
+  const toggleSavedBook = (book: Book, themeId: string) => {
+    const key = libraryBookKey(book)
+    if (library[key]) removeBook(key)
+    else saveBook(book, themeId)
+  }
   const zoom = (f: number) => setTarget((t) => ({ ...t, z: Math.min(3, Math.max(0.6, t.z * f)) }))
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!answersReady) return
@@ -276,18 +325,20 @@ function Universe() {
 
   return (
     <section className="scr uni">
-      <div className="nav">
-        <Link href="/" className="lg" aria-label="最初に戻る"><Logo label /></Link>
-        <div className="tabs">
-          <button className="tab on">星座図</button>
-          <button className="tab" disabled title="準備中">探索</button>
-          <button className="tab" disabled title="準備中">ライブラリ</button>
-        </div>
-        <Link href="/onboarding" className="rs">質問をやり直す</Link>
-      </div>
+      <AppHeader active="universe" />
       <div className="map" ref={mapRef} onPointerDown={startPan} onPointerMove={movePan}
         onPointerUp={stopPan} onPointerCancel={stopPan} onLostPointerCapture={stopPan}>
-        {answersReady ? <>
+        {answersReady && discoveryReady && apiConfigured && !discoverySession ? (
+          <div className="discovery-gate" role="status">
+            <div><span aria-hidden="true">✦</span><h2>星の候補がありません</h2>
+              <p>API接続が有効ですが、このタブに保存された質問結果がありません。質問に答えて星をつくってください。</p>
+              <Link href="/onboarding" className="pill">質問に答える →</Link>
+            </div>
+          </div>
+        ) : answersReady && discoveryReady ? <>
+          <div className={`api-mode-note${apiConfigured ? ' is-live' : ''}`} role="status">
+            {apiConfigured ? 'API接続モード' : 'ローカルデモ（API未接続）'}
+          </div>
           <UniverseCanvas worlds={visible} tiers={tiers} selectedId={selectedId} target={target} panelOpen={panelOpen} onPick={pick} />
           <div className="zc">
             <button aria-label="拡大" onClick={() => zoom(1.3)}>＋</button>
@@ -295,31 +346,27 @@ function Universe() {
             <button aria-label="中心に戻す" onClick={() => setTarget(HOME)}>◎</button>
           </div>
           <div className="lgd">
-            <div><s />興味が強い</div><div><s className="b" />少し気になる</div><div><s className="c" />まだ未知の領域</div>
+            <div><s />{apiConfigured ? 'おすすめ上位' : '興味が強い'}</div><div><s className="b" />{apiConfigured ? 'おすすめ候補' : '少し気になる'}</div><div><s className="c" />{apiConfigured ? 'これから探索' : 'まだ未知の領域'}</div>
           </div>
           <div className="hint">気になる星を選んで、その世界の本をのぞいてみよう</div>
-          <WorldDetailPanel
-            world={world}
-            root={root}
-            kids={kids}
-            tier={tiers[world.id] ?? 0}
-            books={booksForWorld(world.id)}
-            recs={recs}
-            otherWorld={otherWorld}
-            open={panelOpen}
-            readIds={readIds}
-            lastReadId={lastReadId}
-            onPick={pick}
-            onRead={onRead}
-            onClose={() => setPanelOpen(false)}
-            onExplore={() =>
-              setTarget({
-                x: world.position.x,
-                y: world.position.y,
-                z: 1.8,
-              })
-            }
-          />
+          <WorldDetailPanel world={world} root={root} kids={kids} tier={tiers[world.id]}
+            tierLabel={apiConfigured ? ['これから探索', 'おすすめ候補', 'おすすめ上位'][tiers[world.id]] : undefined}
+            books={apiConfigured ? (bookResult?.themeId === world.id ? bookResult.items : []) : booksForWorld(world.id)}
+            warnings={apiConfigured && bookResult?.themeId === world.id ? bookResult.warnings : []}
+            loading={apiConfigured && bookLoading} error={apiConfigured ? bookError : null}
+            onRetry={() => setBookRetry((count) => count + 1)} apiMode={apiConfigured} library={library} open={panelOpen}
+            onToggleSave={(book) => toggleSavedBook(book, world.id)}
+              readIds={readIds}
+              recs={apiConfigured ? [] : recs}
+              otherWorld={apiConfigured ? null : otherWorld}
+              onRead={(book) => {
+                const key = libraryBookKey(book)
+                if (library[key]?.status === 'read') return
+                if (!library[key]) saveBook(book, world.id)
+                setReadStatus(key, 'read')
+              }}
+            onPick={pick} onClose={() => setPanelOpen(false)}
+            onExplore={() => setTarget({ x: world.position.x, y: world.position.y, z: 1.8 })} />
         </> : <div className="map-loading" role="status" aria-live="polite">星座図を準備しています…</div>}
       </div>
     </section>

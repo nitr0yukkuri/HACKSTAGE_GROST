@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import QuestionCard from '../../components/onboarding/QuestionCard'
 import { saveOnboardingAnswers } from '../../lib/recommendations'
+import { clearDiscoverySession, createDiscoveryContext, createDiscoverySeed, isDiscoveryApiConfigured, saveDiscoverySession } from '../../lib/api/discovery'
 import type { OnboardingAnswers, Question } from '../../types/hoshirube'
 
 const INTEREST_QUESTION: Question = {
@@ -52,6 +53,8 @@ export default function OnboardingPage() {
   const router = useRouter()
   const [step, setStep] = useState(0)
   const [answers, setAnswers] = useState<OnboardingAnswers>({ interest: null, themes: [], curiosity: [], readingExperience: null })
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const questions = [
     INTEREST_QUESTION,
@@ -62,6 +65,7 @@ export default function OnboardingPage() {
   const question = questions[step]
 
   const select = (value: string | number) => {
+    setSubmitError(null)
     if (question.answerKey === 'interest') {
       const interest = String(value) as NonNullable<OnboardingAnswers['interest']>
       setAnswers((a) => ({ ...a, interest, curiosity: interest === 'none' ? a.curiosity : [] }))
@@ -92,17 +96,37 @@ export default function OnboardingPage() {
     }
   }
 
-  const next = () => {
-    if (step < questions.length - 1) setStep(step + 1)
-    else {
-      saveOnboardingAnswers(answers)
+  const next = async () => {
+    if (step < questions.length - 1) {
+      setStep(step + 1)
+      return
+    }
+    if (submitting) return
+
+    saveOnboardingAnswers(answers)
+    clearDiscoverySession()
+    setSubmitError(null)
+    if (!isDiscoveryApiConfigured()) {
       router.push('/universe')
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const context = createDiscoveryContext(answers)
+      const seed = await createDiscoverySeed(context)
+      saveDiscoverySession({ context, seed })
+      router.push('/universe')
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : '星の候補を取得できませんでした。もう一度お試しください。')
+    } finally {
+      setSubmitting(false)
     }
   }
   const back = () => (step === 0 ? router.push('/') : setStep(step - 1))
   return (
     <section className="scr">
-      <QuestionCard step={step} total={questions.length} isLastStep={step === questions.length - 1} question={question} answers={answers} onSelect={select} onNext={next} onBack={back} />
+      <QuestionCard step={step} total={questions.length} isLastStep={step === questions.length - 1} question={question} answers={answers} onSelect={select} onNext={next} onBack={back} submitting={submitting} submitError={submitError} />
     </section>
   )
 }

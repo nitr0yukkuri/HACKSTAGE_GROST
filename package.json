@@ -3,6 +3,9 @@
   "private": true,
   "scripts": {
     "dev": "npm --prefix frontend run dev",
+    "mock:api": "node mock-api/server.mjs",
+    "k6:smoke": "node scripts/run-k6.mjs smoke",
+    "k6:load": "node scripts/run-k6.mjs load",
     "build": "npm --prefix frontend run build",
     "start": "npm --prefix frontend run start",
     "typecheck": "npm --prefix frontend run typecheck"
