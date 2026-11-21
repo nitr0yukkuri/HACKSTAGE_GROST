@@ -83,7 +83,7 @@ export default function BookCard({
                 }
                 onClick={() => onRead(book)}
               >
-                {read ? '✓ 読了済み' : '📖 読んだ！'}
+                完読
               </button>
             )}
 
