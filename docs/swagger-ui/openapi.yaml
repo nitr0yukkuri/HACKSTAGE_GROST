@@ -10,13 +10,15 @@ info:
     おすすめ順で返す。フロントは最初の星を初期選択として表示する。
     星を選ぶと `GET /v1/themes/{themeId}/books` が検索語で Google Books を検索し、
     取得した候補から回答意図に合う本を推薦順に最大5冊選び、書誌情報に基づく理由を付けて返す。
+    `GET /v1/books/search` は探索画面向けに、同じAWS側のGoogle Books処理から書誌を最大12冊返す。
 
     旧 `POST /v1/books/recommendations` は削除した。互換 alias は提供しない。
     星の選出をフロントの点数計算で代替しない。ログイン・Cookie・ユーザーDBは扱わない。
 
     ## 実装状態
 
-    3エンドポイント（seed・books・health）と `servers` 先頭の公開 URL は `hackathon-dev` で稼働中である。
+    seed・星別books・healthの3エンドポイントと `servers` 先頭の公開 URL は `hackathon-dev` で稼働中である。
+    探索検索 `/v1/books/search` はこの変更で追加するルートであり、同環境へは未反映である。
     Qwen を使った星生成と、推薦順の選定・意図的な空結果を含む書籍推薦は同環境に反映済みである。
     ただし、このリポジトリのフォローアップ（ネットワーク別の日次上限と、カウンタ利用不可時の
     fail-closed）は PR の段階であり、既存の `hackathon-dev` は再デプロイするまで従来の挙動
@@ -649,6 +651,86 @@ paths:
                       code: UPSTREAM_TIMEOUT
                       message: 時間内に星の候補を取得できませんでした。
                       details: []
+  /v1/books/search:
+    get:
+      tags:
+        - books
+      operationId: searchBooks
+      summary: 本のタイトル・著者名で検索する
+      description: |
+        Google Booksで検索し、正規化した書誌情報を最大12件返す。星別推薦APIとSSMキー取得・
+        日次利用上限・検索結果キャッシュ・タイムアウト処理を共有する。回答に基づくAI推薦は行わない。
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: trim後空不可、128文字以内。URLSearchParamsなどでエンコードして送る。
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: ものづくり
+      responses:
+        '200':
+          description: 検索結果。該当する本がなければ items は空配列。
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - requestId
+                  - items
+                properties:
+                  requestId:
+                    type: string
+                    minLength: 1
+                  items:
+                    type: array
+                    maxItems: 12
+                    items:
+                      $ref: '#/components/schemas/BookItem'
+              examples:
+                results:
+                  summary: 正規化された検索結果
+                  value:
+                    requestId: example-search-001
+                    items:
+                      - id: volume-id-001
+                        source: google_books
+                        title: ものづくりの本
+                        authors:
+                          - 著者名
+                        coverUrl: null
+                        description: 本の内容紹介。
+                        recommendationReason: null
+                        infoUrl: null
+                        worldIds:
+                          - tec
+        '422':
+          description: 検索語が空、または128文字を超えている。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Google Booksの日次利用上限に達した。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Google Booksまたは日次カウンターを利用できなかった。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: 検索の6秒上限、またはAPI全体の25秒期限に達した。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /v1/themes/{themeId}/books:
     get:
       tags:
@@ -1493,6 +1575,13 @@ components:
             Google Books の詳細リンク。HTTPSの `books.google.com` または
             `books.google.co.jp` のみ採用し、取得できなければ `null`。
             URLがGoogle Books API由来であり、ホストがこの範囲であることをLambdaでも検証する。
+        worldIds:
+          type: array
+          description: |
+            探索検索APIで必ず返すGoogle Booksカテゴリ由来の星ID。星別books APIでは省略され、
+            フロントが選んだ星IDを使用する。
+          items:
+            $ref: '#/components/schemas/ThemeId'
     Warning:
       type: object
       additionalProperties: false

@@ -32,6 +32,7 @@ import {
   type UsageCounter,
 } from './lib/usage.js';
 import { handleBooks } from './routes/books.js';
+import { handleBookSearch } from './routes/bookSearch.js';
 import { handleHealth } from './routes/health.js';
 import { handleSeed } from './routes/seed.js';
 
@@ -153,6 +154,9 @@ async function dispatch(event: APIGatewayProxyEventV2, ctx: DispatchContext): Pr
   if (method === 'GET' && path === '/health') {
     return handleHealth(context);
   }
+  if (method === 'GET' && path === '/v1/books/search') {
+    return handleBookSearch(context);
+  }
   const booksMatch = /^\/v1\/themes\/([^/]+)\/books$/.exec(path);
   if (method === 'GET' && booksMatch) {
     return handleBooks(context, booksMatch[1] as string);
@@ -184,6 +188,7 @@ function routeLabel(event: APIGatewayProxyEventV2): string {
   const path = event.rawPath || http?.path || '';
   if (method === 'POST' && path === '/v1/discovery/seed') return 'POST /v1/discovery/seed';
   if (method === 'GET' && path === '/health') return 'GET /health';
+  if (method === 'GET' && path === '/v1/books/search') return 'GET /v1/books/search';
   if (method === 'GET' && /^\/v1\/themes\/[^/]+\/books$/.test(path)) {
     return 'GET /v1/themes/{themeId}/books';
   }
