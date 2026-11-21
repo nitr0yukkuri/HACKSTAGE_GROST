@@ -104,7 +104,7 @@ h2{margin:22px 0 6px;font-size:clamp(19px,3.6vw,24px);line-height:1.6}
 .panel-book-content{display:flex;min-width:0;flex:1;align-items:center;justify-content:space-between;gap:8px}
 .panel-book-meta{min-width:0;overflow:hidden}
 .panel li b{display:block;font-size:14px;line-height:1.4}
-.panel-book-meta b,.panel-book-meta small,.panel-book-meta em{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.panel-book-meta b,.panel-book-meta small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .panel small{display:block;color:var(--mut);font-size:12px}
 .panel em{display:block;font-style:normal;color:#b3c4e6;font-size:12px;margin-top:2px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
@@ -226,7 +226,7 @@ a.pill{color:inherit;text-decoration:none}
 .panel li .book-description summary{cursor:pointer;color:#a9c2f5}
 .panel li .book-description p{margin:4px 0 0;max-height:110px;overflow:auto;white-space:normal;line-height:1.5}
 .panel li .book-info-link{display:inline-block;margin-top:4px;color:#a9c2f5;font-size:11px;text-decoration:underline;text-underline-offset:2px}
-.panel-book-meta em{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.panel-book-meta em{overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere}
 @media(max-width:760px){.discovery-gate{padding:12px}.discovery-gate>div{padding:22px}}
 
 
