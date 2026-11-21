@@ -14,6 +14,8 @@ export interface ConverseParams {
   system: string;
   user: string;
   maxTokens: number;
+  /** 指定したときだけ inferenceConfig に temperature を含める。 */
+  temperature?: number;
   abortSignal: AbortSignal;
 }
 
@@ -130,7 +132,10 @@ export function createBedrockGateway(options: BedrockGatewayOptions): BedrockGat
       modelId: options.config.bedrockModelId,
       system: [{ text: params.system }],
       messages: [{ role: 'user', content: [{ text: params.user }] }],
-      inferenceConfig: { maxTokens: params.maxTokens },
+      inferenceConfig: {
+        maxTokens: params.maxTokens,
+        ...(params.temperature === undefined ? {} : { temperature: params.temperature }),
+      },
       ...extra,
     });
     return getClient().send(command, { abortSignal: params.abortSignal });

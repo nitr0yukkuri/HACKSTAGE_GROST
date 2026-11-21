@@ -46,6 +46,13 @@ const MAX_REASON_CODE_POINTS = 200;
 export const MAX_PROMPT_DESCRIPTION_CODE_POINTS = 400;
 const RECOMMENDATION_MAX_TOKENS = 2048;
 /**
+ * 推薦の選定呼び出しの温度。同じ条件での選定・冊数のぶれを抑えるため 0 にする。
+ * 選定以外の呼び出し（seed など）は指定せず、モデル既定のままにする。
+ */
+const RECOMMENDATION_TEMPERATURE = 0;
+/** AI の選定がこの冊数に満たないとき、候補から検索順で補う。 */
+export const MIN_RECOMMENDED_BOOKS = 3;
+/**
  * 推薦選定キャッシュのキーに含めるプロンプトの版。
  * プロンプトの制約を変えたら値を上げ、古い条件で作った選定を再利用しない。
  */
@@ -81,6 +88,8 @@ export async function handleBooks(
 
   let items: BookItem[];
   let reasonUnavailable = false;
+  /** 冊数の下限までサーバー側で補った本。理由なしの警告から除外する。 */
+  let filledIds = new Set<string>();
 
   if (candidates.length === 0) {
     items = [];
@@ -103,7 +112,10 @@ export async function handleBooks(
         items = selectBooks(normalized);
         reasonUnavailable = true;
       } else {
-        items = restored;
+        // キャッシュには AI の選定だけを保存しているため、同じ候補から補充を再計算する。
+        const filled = fillToMinimum(restored, candidates);
+        items = filled.items;
+        filledIds = filled.filledIds;
       }
     } else if (ctx.deadline.expired()) {
       items = selectBooks(normalized);
@@ -120,11 +132,15 @@ export async function handleBooks(
         items = selectBooks(normalized);
         reasonUnavailable = true;
       } else {
-        items = selection.items;
+        // AI の選定が3冊未満なら、未選定の候補から検索順で補う（理由は null）。
+        const filled = fillToMinimum(selection.items, candidates);
+        items = filled.items;
+        filledIds = filled.filledIds;
         // 紹介文があるのに理由がない本は、理由の取得に失敗したものとして扱う。
         if (selection.reasonMissing) reasonUnavailable = true;
         // 紹介文があるのに理由が付かなかった選定は、次回に理由を付け直せるよう再利用しない。
         // 内容紹介がない本の理由 null と有効な空配列は成功した選定として再利用する。
+        // キャッシュには AI の選定だけを保存し、補充分は復元時に同じ候補から再計算する。
         if (selection.cacheable && !selection.reasonMissing) {
           ctx.deps.recommendationCache.set(cacheKey, selection.cacheValue, ctx.deps.now());
         }
@@ -133,7 +149,15 @@ export async function handleBooks(
   }
 
   // キャッシュから復元した選定でも、紹介文があるのに理由がない場合は警告する。
-  if (items.some((item) => item.description !== null && item.recommendationReason === null)) {
+  // 冊数の下限まで補った本は意図した動作なので、理由なしの対象から除く。
+  if (
+    items.some(
+      (item) =>
+        item.description !== null &&
+        item.recommendationReason === null &&
+        !filledIds.has(item.id),
+    )
+  ) {
     reasonUnavailable = true;
   }
 
@@ -213,6 +237,8 @@ async function selectRecommendedBooks(
       system: prompt.system,
       user: prompt.user,
       maxTokens: RECOMMENDATION_MAX_TOKENS,
+      // 同じ条件での選定・冊数のぶれを抑えるため。
+      temperature: RECOMMENDATION_TEMPERATURE,
       abortSignal: ctx.deadline.signalFor(reasonBudgetMs),
       tool: buildRecommendationsTool(input.candidates),
     });
@@ -296,6 +322,35 @@ function restoreCachedSelection(
     items.push(toBookItem(candidate, entry.reason));
   }
   return items;
+}
+
+/**
+ * AI の選定が最小冊数に満たないとき、未選定の候補から検索順で補う。
+ * 内容紹介のある候補を優先し、足りなければ内容紹介のない候補で補う。
+ * 補った本の理由は null とし、AI が選んだ本の順番・理由は変えない（補充分は常に末尾）。
+ * 候補が足りなければ、ある分だけを返す。
+ */
+export function fillToMinimum(
+  items: BookItem[],
+  candidates: readonly NormalizedBook[],
+): { items: BookItem[]; filledIds: Set<string> } {
+  const filledIds = new Set<string>();
+  if (items.length >= MIN_RECOMMENDED_BOOKS) return { items, filledIds };
+
+  const selectedIds = new Set(items.map((item) => item.id));
+  const filled = [...items];
+  // 1周目で内容紹介のある候補、2周目で内容紹介のない候補を検索順に補う。
+  for (const requireDescription of [true, false]) {
+    for (const candidate of candidates) {
+      if (filled.length >= MIN_RECOMMENDED_BOOKS) break;
+      if (selectedIds.has(candidate.id)) continue;
+      if ((candidate.description !== null) !== requireDescription) continue;
+      filled.push(toBookItem(candidate, null));
+      filledIds.add(candidate.id);
+    }
+    if (filled.length >= MIN_RECOMMENDED_BOOKS) break;
+  }
+  return { items: filled, filledIds };
 }
 
 function decodeThemeId(raw: string): string | null {
