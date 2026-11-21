@@ -1,4 +1,8 @@
 'use client'
+
+import { readingLinksForLibrary } from '../../lib/reading-links'
+
+import { classifyBook } from '../../lib/book-classification'
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Link from 'next/link'
 import AppHeader from '../../components/common/AppHeader'
@@ -100,7 +104,12 @@ function Universe() {
   const finishPointerRef = useRef<(pointerId: number, map: HTMLDivElement) => void>(() => {})
   targetRef.current = target
 
-  const selectedId = picked ?? (apiConfigured && discoverySession ? discoverySession.seed.themes[0].themeId : initialWorldId(scores))
+  const selectedId = picked ?? (
+    answers.themes.find((id) => WORLDS.some((w) => w.id === id && w.level === 1))
+    ?? (apiConfigured && discoverySession
+      ? discoverySession.seed.themes[0].themeId
+      : initialWorldId(scores))
+  )
   const recs = useMemo(
     () => recommendNextInWorld(selectedId, history),
     [selectedId, history],
@@ -108,8 +117,73 @@ function Universe() {
 
   const world = WORLDS.find((w) => w.id === selectedId)!
   const root = world.parentId ? WORLDS.find((w) => w.id === world.parentId)! : world
-  const kids = WORLDS.filter((w) => w.parentId === root.id)
-  const visible = WORLDS.filter((w) => w.level === 1 || w.parentId === root.id) // 選んだ星の中ジャンルだけ展開
+  // 質問で選択した大ジャンルを出発点にする。
+  // おまかせ・未選択時はAPI候補、またはスコア上位のジャンルを使用。
+  const initialGenreIds = useMemo(() => {
+    const valid = new Set(WORLDS.filter((w) => w.level === 1).map((w) => w.id))
+    const chosen = answers.themes.filter((id) => valid.has(id))
+    if (chosen.length > 0) return new Set(chosen)
+
+    if (apiConfigured && discoverySession) {
+      return new Set(discoverySession.seed.themes.map((theme) => theme.themeId))
+    }
+
+    return new Set([initialWorldId(baseScores)])
+  }, [answers.themes, apiConfigured, discoverySession, baseScores])
+
+  // 読了済みの本に明示的に付いている小ジャンルだけを解放する。
+  // API書籍も対象。大ジャンルしか付いていない本からは小ジャンルを推測しない。
+  const unlockedChildIds = useMemo(() => {
+    const childIds = new Set(WORLDS.filter((w) => w.parentId).map((w) => w.id))
+    return new Set(
+      Object.values(library)
+        .filter((entry) => entry.status === 'read')
+        .flatMap((entry) => entry.book.worldIds)
+        .filter((id) => childIds.has(id)),
+    )
+  }, [library])
+
+  // 読了済みの本から、まだ解放されていない関連分野を探す。
+  // 推定結果は確定扱いせず、候補として保持する。
+  const suggestedChildIds = useMemo(() => {
+    const candidates = Object.values(library)
+      .filter((entry) => entry.status === 'read')
+      .flatMap((entry) => {
+        const classification = classifyBook(entry.book)
+        return [
+          ...classification.confirmedIds,
+          ...classification.suggestedIds,
+        ]
+      })
+
+    return new Set(
+      candidates.filter((id) => !unlockedChildIds.has(id)),
+    )
+  }, [library, unlockedChildIds])
+
+  // 読了によって解放された中ジャンルのみ、パネルから選択できる。
+  const kids = WORLDS.filter(
+    (w) => w.parentId === root.id && unlockedChildIds.has(w.id),
+  )
+
+  // 解放済みの小ジャンルの親も表示して、星が孤立しないようにする。
+  const visibleIds = useMemo(() => {
+    const ids = new Set(initialGenreIds)
+    for (const childId of [...unlockedChildIds, ...suggestedChildIds]) {
+      const child = WORLDS.find((w) => w.id === childId)
+      if (child?.parentId) {
+        ids.add(child.parentId)
+        ids.add(childId)
+      }
+    }
+    return ids
+  }, [initialGenreIds, unlockedChildIds, suggestedChildIds])
+
+  // 大ジャンルは自由に探索できるよう常時表示する。
+  // 小ジャンルだけ読了による解放を必要とする。
+  const visible = WORLDS.filter(
+    (w) => w.level === 1 || visibleIds.has(w.id),
+  )
   const searchQuery = discoverySession?.seed.themes.find((theme) => theme.themeId === world.id)?.searchQuery ?? world.searchQuery
 
   useEffect(() => {
@@ -141,6 +215,8 @@ function Universe() {
       })
     return () => controller.abort()
   }, [apiConfigured, discoveryReady, discoverySession, world.id, searchQuery, bookRetry])
+
+  const readingLinks = useMemo(() => readingLinksForLibrary(library), [library])
 
   const syncLinks = useMemo<SyncLink[]>(() => {
     const usedTargets = new Set<string>()
@@ -395,6 +471,8 @@ function Universe() {
               worlds={visible}
               tiers={tiers}
               completedWorldIds={completedWorldIds}
+              suggestedIds={suggestedChildIds}
+              readingLinks={readingLinks}
               syncLinks={syncLinks}
               selectedId={selectedId}
               target={target}

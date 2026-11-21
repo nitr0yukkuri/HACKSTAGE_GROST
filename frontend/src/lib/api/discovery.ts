@@ -204,7 +204,7 @@ function parseBook(payload: unknown, themeId: string): BookRecommendation {
       throw new DiscoveryApiError('書籍APIが重複した本を返しました。', 502, 'INVALID_API_RESPONSE')
     }
     seenIds.add(entry.id)
-    return {
+    const book: Book = {
       id: entry.id,
       source: 'google_books',
       title: entry.title,
@@ -215,6 +215,8 @@ function parseBook(payload: unknown, themeId: string): BookRecommendation {
       infoUrl: entry.infoUrl,
       worldIds: [themeId],
     }
+
+    return book
   })
 
   const warnings = payload.warnings.map((entry): BookWarning => {
