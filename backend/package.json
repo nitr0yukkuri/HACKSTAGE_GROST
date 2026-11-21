@@ -1,0 +1,29 @@
+{
+  "name": "hoshirube-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ほしるべ MVP の Lambda バックエンド（API Gateway HTTP API v2）",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "esbuild src/handler.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.mjs \"--banner:js=import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);\"",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dev": "esbuild src/dev-server.ts --bundle --platform=node --target=node22 --format=esm --log-level=warning --outfile=dist/dev-server.mjs \"--banner:js=import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);\" && node dist/dev-server.mjs"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1170.0",
+    "@aws-sdk/client-dynamodb": "^3.1172.0",
+    "@aws-sdk/client-ssm": "^3.1170.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.164",
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.12"
+  }
+}
