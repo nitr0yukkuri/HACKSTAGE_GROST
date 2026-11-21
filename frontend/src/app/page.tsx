@@ -1,11 +1,9 @@
 import StartRocketButton from '../components/common/StartRocketButton'
-import StarCursorTrail from '../components/common/StarCursorTrail'
 import Logo from '../components/common/Logo'
 
 export default function WelcomePage() {
   return (
     <section className="scr">
-      <StarCursorTrail />
       <div className="earth" aria-hidden="true" />
       <div className="hoshirube-hero-content">
       <Logo size={140} stroke={2.4} />
