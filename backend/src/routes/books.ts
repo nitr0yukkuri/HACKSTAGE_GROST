@@ -7,14 +7,13 @@ import { AppError, type ErrorDetail } from '../lib/errors.js';
 import {
   codePointLength,
   getHeader,
-  getQueryParameter,
   jsonResponse,
   utf8ByteLength,
   MAX_CONTEXT_BYTES,
   type ApiResponse,
 } from '../lib/http.js';
+import { readBooksSearchQuery, searchGoogleBooksItems } from '../lib/bookSearch.js';
 import {
-  GoogleBooksError,
   normalizeVolumes,
   type NormalizedBook,
 } from '../lib/googleBooks.js';
@@ -42,7 +41,6 @@ export interface ParsedRecommendations {
 const MAX_BOOKS = 5;
 /** 推薦の再選定でモデルに渡す候補の上限。 */
 export const MAX_RECOMMENDATION_CANDIDATES = 12;
-const MAX_QUERY_CODE_POINTS = 128;
 const MAX_REASON_CODE_POINTS = 200;
 /** 評価用に入力を制限する内容紹介の上限。応答する書誌は整形済みの全文を保つ。 */
 export const MAX_PROMPT_DESCRIPTION_CODE_POINTS = 400;
@@ -52,9 +50,6 @@ const RECOMMENDATION_MAX_TOKENS = 2048;
  * プロンプトの制約を変えたら値を上げ、古い条件で作った選定を再利用しない。
  */
 export const RECOMMENDATION_PROMPT_VERSION = 6;
-/** API キー取得だけに許す上限。Google Books の6秒段階には含める。 */
-const API_KEY_FETCH_MS = 2_000;
-
 const CONTEXT_HEADER = 'X-Discovery-Context';
 
 export async function handleBooks(
@@ -76,114 +71,9 @@ export async function handleBooks(
     );
   }
 
-  const query = readQuery(ctx);
+  const query = readBooksSearchQuery(ctx);
   const validated = readDiscoveryContext(ctx);
-
-  if (ctx.deadline.expired()) {
-    throw booksTimeout();
-  }
-
-  // 検索段階の開始。API キー取得もこの段階の6秒に含める。
-  const searchStarted = ctx.deps.now();
-  let rawItems: unknown[];
-
-  // 同一検索語の結果は実行環境内で最大30分再利用する。ヒット時は SSM も Google Books も呼ばない。
-  const cachedItems = ctx.deps.booksCache.get(query, ctx.deps.now());
-  if (cachedItems !== undefined) {
-    rawItems = cachedItems;
-    ctx.meta.upstreams.push({
-      name: 'google_books',
-      durationMs: 0,
-      outcome: 'ok',
-      cached: true,
-    });
-  } else {
-    const apiKey = await readApiKey(ctx);
-    // SSM の応答時点で全体期限に達していたら、カウンタも Google Books も呼ばない。
-    if (ctx.deadline.expired()) {
-      throw booksTimeout();
-    }
-
-    const searchBudgetMs = ctx.deps.limits.booksSearchMs - (ctx.deps.now() - searchStarted);
-    if (searchBudgetMs <= 0) {
-      ctx.meta.upstreams.push({
-        name: 'google_books',
-        durationMs: ctx.deps.now() - searchStarted,
-        outcome: 'timeout',
-      });
-      throw booksTimeout();
-    }
-
-    // キー取得と予算の確認の後、Google Books を呼ぶ直前に日次上限を消費する。
-    // キャッシュヒット時と、この時点で時間切れになる場合は消費しない。
-    const usage = await ctx.deps.usage.consume(
-      'google_books',
-      ctx.deadline.signalFor(Math.min(USAGE_CONSUME_TIMEOUT_MS, searchBudgetMs)),
-      ctx.requestId,
-      ctx.event.requestContext?.http?.sourceIp,
-    );
-    if (usage === 'exceeded') {
-      throw new AppError(429, 'RATE_LIMITED');
-    }
-
-    // カウンタ待ちを差し引いて検索段階の残量を再計算する。Google Books の signal は
-    // この値で作り、0 以下・期限切れなら Google Books を呼ばない。
-    const searchRemainingMs = ctx.deps.limits.booksSearchMs - (ctx.deps.now() - searchStarted);
-    if (searchRemainingMs <= 0 || ctx.deadline.expired()) {
-      ctx.meta.upstreams.push({
-        name: 'google_books',
-        durationMs: ctx.deps.now() - searchStarted,
-        outcome: 'timeout',
-      });
-      throw booksTimeout();
-    }
-
-    if (usage === 'unavailable') {
-      // カウンタが使えないときは Google Books を呼ばない（fail-closed）。
-      // 期限切れは上のタイムアウト判定を優先する。
-      throw new AppError(502, 'BOOKS_UPSTREAM_ERROR');
-    }
-
-    try {
-      rawItems = await ctx.deps.googleBooks.search(
-        query,
-        apiKey,
-        ctx.deadline.signalFor(searchRemainingMs),
-      );
-      ctx.meta.upstreams.push({
-        name: 'google_books',
-        durationMs: ctx.deps.now() - searchStarted,
-        outcome: 'ok',
-      });
-      // 成功した結果だけ保存する（失敗はキャッシュしない）。
-      ctx.deps.booksCache.set(query, rawItems, ctx.deps.now());
-    } catch (error) {
-      const timedOut =
-        (error instanceof GoogleBooksError && error.kind === 'timeout') || isAbortError(error);
-      // URL・キー・検索語は出さない。失効・クォータ・形状劣化の切り分け用に種別だけ残す。
-      ctx.deps.logger.warn({
-        event: 'google_books_failed',
-        requestId: ctx.requestId,
-        kind: error instanceof GoogleBooksError ? error.kind : 'unknown',
-        statusCode: error instanceof GoogleBooksError ? error.statusCode : undefined,
-      });
-      ctx.meta.upstreams.push({
-        name: 'google_books',
-        durationMs: ctx.deps.now() - searchStarted,
-        outcome: timedOut ? 'timeout' : 'error',
-      });
-      if (timedOut) throw booksTimeout();
-      // 400/401/403 はキー失効の可能性があるため、キャッシュ済みキーを捨てて次回再取得する。
-      if (
-        error instanceof GoogleBooksError &&
-        error.kind === 'http' &&
-        isKeyRejectedStatus(error.statusCode)
-      ) {
-        ctx.deps.googleBooksApiKey.invalidate();
-      }
-      throw new AppError(502, 'BOOKS_UPSTREAM_ERROR');
-    }
-  }
+  const rawItems = await searchGoogleBooksItems(ctx, query);
 
   const normalized = normalizeVolumes(rawItems);
   // 書名と著者が揃う明白な同一作品・版違いだけをまとめ、検索順の先頭から最大12冊を候補にする。
@@ -408,20 +298,6 @@ function restoreCachedSelection(
   return items;
 }
 
-/**
- * API キーを取得する。取得失敗・打ち切りは undefined（キーなし検索）として続行する。
- * 上限は 2 秒と全体残りの短い方。失敗はプロバイダ側でキャッシュされない。
- */
-async function readApiKey(ctx: RequestContext): Promise<string | undefined> {
-  try {
-    return await ctx.deps.googleBooksApiKey(
-      ctx.deadline.signalFor(Math.min(API_KEY_FETCH_MS, ctx.deps.limits.booksSearchMs)),
-    );
-  } catch {
-    return undefined;
-  }
-}
-
 function decodeThemeId(raw: string): string | null {
   try {
     const decoded = decodeURIComponent(raw);
@@ -429,19 +305,6 @@ function decodeThemeId(raw: string): string | null {
   } catch {
     return null;
   }
-}
-
-function readQuery(ctx: RequestContext): string {
-  const { present, value } = getQueryParameter(ctx.event, 'q');
-  if (!present || typeof value !== 'string') {
-    throw validationError([{ field: 'q', code: 'INVALID_REQUEST_SHAPE' }], '検索語を確認してください。');
-  }
-  const trimmed = value.trim();
-  const length = codePointLength(trimmed);
-  if (length < 1 || length > MAX_QUERY_CODE_POINTS) {
-    throw validationError([{ field: 'q', code: 'INVALID_REQUEST_SHAPE' }], '検索語を確認してください。');
-  }
-  return trimmed;
 }
 
 function readDiscoveryContext(ctx: RequestContext): ValidatedSeedInput {
@@ -477,17 +340,6 @@ function isAscii(value: string): boolean {
     if (code < 0x20 || code > 0x7e) return false;
   }
   return true;
-}
-
-function isAbortError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if (error.name === 'AbortError' || error.name === 'TimeoutError') return true;
-  return (error as { code?: unknown }).code === 'ABORT_ERR';
-}
-
-/** Google Books がキー失効を示すステータス。 */
-function isKeyRejectedStatus(statusCode: number | undefined): boolean {
-  return statusCode === 400 || statusCode === 401 || statusCode === 403;
 }
 
 /**
@@ -747,10 +599,6 @@ function looksLikeMarkup(value: string): boolean {
 
 function validationError(details: ErrorDetail[], message: string): AppError {
   return new AppError(422, 'VALIDATION_ERROR', message, details);
-}
-
-function booksTimeout(): AppError {
-  return new AppError(504, 'UPSTREAM_TIMEOUT', '時間内に書籍情報を取得できませんでした。');
 }
 
 /** tool use で順位付き推薦を受け取るためのツール定義。候補 ID だけを許す。 */

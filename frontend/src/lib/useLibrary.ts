@@ -35,7 +35,7 @@ export default function useLibrary() {
     }
   }, [])
 
-  const save = useCallback((book: Book, themeId: string) => saveBook(book, themeId), [])
+  const save = useCallback((book: Book, themeId?: string) => saveBook(book, themeId), [])
   const setReadStatus = useCallback((bookId: string, status: ReadingStatus) => setBookReadStatus(bookId, status), [])
   const remove = useCallback((bookId: string) => removeBook(bookId), [])
 

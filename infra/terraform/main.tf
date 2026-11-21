@@ -141,7 +141,7 @@ resource "aws_iam_role_policy" "lambda" {
 
 resource "aws_lambda_function" "api" {
   function_name = local.function_name
-  description   = "ほしるべ API（seed / books / health）"
+  description   = "ほしるべ API（seed / books / search / health）"
   role          = aws_iam_role.lambda.arn
 
   runtime       = "nodejs22.x"
@@ -210,6 +210,13 @@ resource "aws_apigatewayv2_route" "seed" {
 resource "aws_apigatewayv2_route" "books" {
   api_id             = aws_apigatewayv2_api.api.id
   route_key          = "GET /v1/themes/{themeId}/books"
+  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+  authorization_type = "NONE"
+}
+
+resource "aws_apigatewayv2_route" "book_search" {
+  api_id             = aws_apigatewayv2_api.api.id
+  route_key          = "GET /v1/books/search"
   target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
   authorization_type = "NONE"
 }

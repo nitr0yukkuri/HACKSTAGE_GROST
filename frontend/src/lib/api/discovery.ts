@@ -110,7 +110,7 @@ function apiErrorFromPayload(status: number, payload: unknown): DiscoveryApiErro
   return new DiscoveryApiError(message, status, code, requestId, details)
 }
 
-async function requestJson(path: string, init: RequestInit = {}, callerSignal?: AbortSignal): Promise<unknown> {
+export async function requestJson(path: string, init: RequestInit = {}, callerSignal?: AbortSignal): Promise<unknown> {
   const base = configuredBaseUrl()
   const controller = new AbortController()
   const onCallerAbort = () => controller.abort()
