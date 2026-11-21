@@ -18,3 +18,12 @@ dist/
 # TypeScript and Next.js generated files
 *.tsbuildinfo
 next-env.d.ts
+
+# Terraform（state と実 tfvars はコミットしない。.terraform.lock.hcl はコミットする）
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+infra/terraform/build/

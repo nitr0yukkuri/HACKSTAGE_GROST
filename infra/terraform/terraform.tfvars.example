@@ -1,0 +1,44 @@
+# terraform.tfvars の例。このファイルをコピーして terraform.tfvars を作る。
+# terraform.tfvars 本体は秘密や環境固有の値を含み得るためコミットしない（.gitignore 済み）。
+
+aws_region  = "ap-northeast-1"
+env         = "dev"
+name_prefix = "hoshirube"
+
+# Bedrock の採用モデルは Qwen3 235B A22B 2507。基盤モデルを直接呼び、
+# 処理リージョンは東京のみ。切り替える場合は bedrock_model_id と
+# bedrock_foundation_model_id を合わせて変更する。
+bedrock_model_id              = "qwen.qwen3-235b-a22b-2507-v1:0"
+bedrock_foundation_model_id   = "qwen.qwen3-235b-a22b-2507-v1:0"
+bedrock_destination_regions   = ["ap-northeast-1"]
+
+# Google Books API キーは Terraform で作らない。SSM に SecureString で手動作成し、
+# そのパラメータ名だけを渡す。null にするとキーなしで呼ぶ（開発用）。
+google_books_api_key_param_name = "/hoshirube/google-books-api-key"
+
+# ローカル開発に加えて Vercel のオリジンを許可する例。"*" は validation で拒否する。
+# cors_allow_origins = ["http://localhost:3000", "https://hoshirube-nitr0s-projects.vercel.app"]
+cors_allow_origins = ["http://localhost:3000"]
+
+# API Gateway のスロットリング。1人の利用者が seed 1回（最大2回の Bedrock 呼び出し）と
+# books 最大3回を同時に送る前提で、1秒あたり3リクエスト・バースト8に抑える。
+throttling_burst_limit = 8
+throttling_rate_limit  = 3
+
+# 日次（Asia/Tokyo）の外部呼び出し上限。公開 API の累積消費を止める最後の砦。
+# Google Books は既定の日次クォータ（1,000）より少し下の 900 に置く。
+daily_bedrock_limit      = 3000
+daily_google_books_limit = 900
+
+# 予算アラート（任意）。メールを設定したときだけ AWS Budgets を作り、
+# 実績80%と予測100%で通知する。既定は無効（null）。
+# budget_alert_email  = "alert@example.com"
+# monthly_budget_usd  = 20
+
+# 新規アカウントは同時実行上限が小さく予約できないことがあるため既定は null（予約しない）。
+# lambda_reserved_concurrency = 2
+
+# Lambda の bundle。既定は ../../backend/dist/index.mjs を解決する。
+# lambda_artifact_path = "../../backend/dist/index.mjs"
+
+log_retention_days = 7
