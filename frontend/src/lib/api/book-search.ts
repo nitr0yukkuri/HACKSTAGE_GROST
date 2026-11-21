@@ -1,5 +1,6 @@
 import type { Book } from '../../types/hoshirube'
 import { WORLDS } from '../../data/worlds'
+import { normalizeBookCoverUrl } from '../book-covers'
 import { DiscoveryApiError, requestJson } from './discovery'
 
 export interface BookSearchResult {
@@ -13,23 +14,11 @@ const nonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0
 
 const WORLD_IDS = new Set(WORLDS.map((world) => world.id))
-const COVER_HOSTS = new Set(['books.google.com', 'books.googleusercontent.com'])
-
-function isSafeCoverUrl(value: unknown): value is string {
-  if (typeof value !== 'string') return false
-  try {
-    const url = new URL(value)
-    return url.protocol === 'https:' && COVER_HOSTS.has(url.hostname.toLowerCase()) &&
-      !url.username && !url.password && !url.port
-  } catch {
-    return false
-  }
-}
 
 function isBook(value: unknown): value is Book {
   return isRecord(value) && nonEmptyString(value.id) && value.source === 'google_books' &&
     nonEmptyString(value.title) && Array.isArray(value.authors) && value.authors.every(nonEmptyString) &&
-    (value.coverUrl === null || isSafeCoverUrl(value.coverUrl)) &&
+    (value.coverUrl === null || typeof value.coverUrl === 'string') &&
     (value.description === null || (nonEmptyString(value.description) && Array.from(value.description).length <= 1000)) &&
     value.recommendationReason === null &&
     (value.infoUrl === null || (typeof value.infoUrl === 'string' && /^https:\/\/books\.google\.(com|co\.jp)\//.test(value.infoUrl))) &&
@@ -57,5 +46,10 @@ export async function searchGoogleBooks(query: string, signal?: AbortSignal): Pr
     throw new DiscoveryApiError('本の検索APIが重複した本を返しました。', 502, 'INVALID_API_RESPONSE')
   }
 
-  return { items: payload.items }
+  return {
+    items: payload.items.map((book) => ({
+      ...book,
+      coverUrl: normalizeBookCoverUrl(book.coverUrl, book.source),
+    })),
+  }
 }
