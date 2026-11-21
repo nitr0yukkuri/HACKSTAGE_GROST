@@ -68,13 +68,14 @@ h2{margin:22px 0 6px;font-size:clamp(19px,3.6vw,24px);line-height:1.6}
 .n.lv2 span{font-size:12.5px;color:#d6f4ff}
 .n.sel span{color:var(--gold);font-size:16px;font-weight:700}
 .n.is-complete{filter:drop-shadow(0 0 9px rgba(255,184,103,.78))}
-.n.is-synced{filter:drop-shadow(0 0 9px rgba(112,211,255,.82))}
+.n.is-synced{filter:drop-shadow(0 0 12px rgba(75,191,255,.95))}
 .n.is-complete span,.n.is-complete.sel span{color:#ffd093;font-weight:700}
-.n.is-synced span{color:#9edfff}
+.n.is-synced span{color:#73d1ff}
 .n.is-complete::before,.n.is-synced::after{content:"";position:absolute;left:50%;top:50%;width:56px;height:56px;border:1px solid currentColor;border-radius:50%;pointer-events:none;opacity:0}
 .n.is-complete::before{color:rgba(255,184,103,.9);animation:constellation-complete 1.25s ease-out 1}
-.n.is-synced::after{color:rgba(112,211,255,.9);animation:constellation-sync 1.55s ease-out 1}
-.n.is-synced:not(.sel) span{color:#9edfff}
+.n.is-synced::after{color:rgba(75,191,255,.9);animation:constellation-sync 1.55s ease-out 1}
+.n.is-synced:not(.sel) span{color:#73d1ff;text-shadow:0 0 10px rgba(79,190,255,.65),0 0 4px #040916}
+.n.is-synced:not(.sel)::after{opacity:.4;box-shadow:0 0 14px rgba(74,190,255,.72)}
 .zc{position:absolute;left:16px;top:14px;display:flex;flex-direction:column;border:1px solid var(--ln);border-radius:12px;background:rgba(10,18,40,.6);overflow:hidden}
 .zc button{width:40px;height:40px;border:0;background:none;font-size:18px}
 .lgd{position:absolute;left:16px;bottom:16px;padding:12px 16px;border:1px solid var(--ln);border-radius:14px;background:rgba(10,18,40,.65);font-size:12.5px;display:grid;gap:6px}
@@ -252,14 +253,6 @@ a.pill{color:inherit;text-decoration:none}
 .panel .read:disabled {
   opacity: 0.65;
   cursor: default;
-}
-
-.panel .other-world {
-  margin-top: 14px;
-}
-
-.panel .other-world h4 {
-  margin-bottom: 8px;
 }
 
 .panel .world-complete {
