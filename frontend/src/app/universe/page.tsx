@@ -1,17 +1,25 @@
 'use client'
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Link from 'next/link'
 import AppHeader from '../../components/common/AppHeader'
 import UniverseCanvas, { type ViewState } from '../../components/universe/UniverseCanvas'
 import WorldDetailPanel from '../../components/universe/WorldDetailPanel'
 import { WORLDS } from '../../data/worlds'
 import { booksForWorld, calcScores, decodeAnswers, emptyOnboardingAnswers, initialWorldId, loadOnboardingAnswers, tiersFor } from '../../lib/recommendations'
+import { CONNECTIONS } from '../../data/connections'
+import {
+  applyReadHistory,
+  recommendNextInWorld,
+  type ReadEntry,
+} from '../../lib/recommendations'
 import useLibrary from '../../lib/useLibrary'
 import { getThemeBooks, isDiscoveryApiConfigured, loadDiscoverySession, type BookRecommendation, type DiscoverySession } from '../../lib/api/discovery'
 import { libraryBookKey } from '../../lib/library-store'
 import type { Book, OnboardingAnswers, Tier } from '../../types/hoshirube'
 
 const HOME: ViewState = { x: 0, y: 0, z: 1 }
+const clamp = (value: number, limit = 1.3) => Math.min(limit, Math.max(-limit, value))
+interface SyncLink { from: string; to: string }
 interface ActivePan { pointerId: number; lastX: number; lastY: number }
 interface TouchPoint { x: number; y: number; pendingTap: boolean; pointerType: string }
 interface ActivePinch {
@@ -41,7 +49,30 @@ function Universe() {
     setAnswersReady(true)
     setDiscoveryReady(true)
   }, [apiConfigured])
-  const scores = useMemo(() => calcScores(answers), [answers])
+  const { entries: library, save: saveBook, remove: removeBook, setReadStatus } = useLibrary()
+  const baseScores = useMemo(() => calcScores(answers), [answers])
+
+  const history = useMemo<ReadEntry[]>(
+    () => Object.values(library)
+      .filter((entry) =>
+        entry.status === 'read' && entry.book.source === 'local_demo'
+      )
+      .map((entry) => ({
+        bookId: entry.book.id,
+        readAt: entry.savedAt,
+      })),
+    [library],
+  )
+
+  const readIds = useMemo(
+    () => new Set(history.map((entry) => entry.bookId)),
+    [history],
+  )
+
+  const scores = useMemo(
+    () => applyReadHistory(baseScores, history),
+    [baseScores, history],
+  )
   const localTiers = useMemo(() => tiersFor(scores), [scores])
   const tiers = useMemo(() => {
     if (!apiConfigured || !discoverySession) return localTiers
@@ -50,10 +81,17 @@ function Universe() {
     WORLDS.filter((item) => item.parentId).forEach((item) => { apiTiers[item.id] = apiTiers[item.parentId!] })
     return apiTiers
   }, [apiConfigured, discoverySession, localTiers])
+
+  const completedWorldIds = useMemo(
+    () => new Set(WORLDS.filter((candidate) => {
+      const books = booksForWorld(candidate.id)
+      return books.length > 0 && books.every((book) => readIds.has(book.id))
+    }).map((candidate) => candidate.id)),
+    [readIds],
+  )
   const [picked, setPicked] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(true)
   const [target, setTarget] = useState<ViewState>(HOME)
-  const { entries: library, save: saveBook, remove: removeBook } = useLibrary()
   const mapRef = useRef<HTMLDivElement>(null)
   const activePan = useRef<ActivePan | null>(null)
   const activePointers = useRef(new Map<number, TouchPoint>())
@@ -63,6 +101,11 @@ function Universe() {
   targetRef.current = target
 
   const selectedId = picked ?? (apiConfigured && discoverySession ? discoverySession.seed.themes[0].themeId : initialWorldId(scores))
+  const recs = useMemo(
+    () => recommendNextInWorld(selectedId, history),
+    [selectedId, history],
+  )
+
   const world = WORLDS.find((w) => w.id === selectedId)!
   const root = world.parentId ? WORLDS.find((w) => w.id === world.parentId)! : world
   const kids = WORLDS.filter((w) => w.parentId === root.id)
@@ -98,6 +141,55 @@ function Universe() {
       })
     return () => controller.abort()
   }, [apiConfigured, discoveryReady, discoverySession, world.id, searchQuery, bookRetry])
+
+  const syncLinks = useMemo<SyncLink[]>(() => {
+    const usedTargets = new Set<string>()
+    return WORLDS.filter((candidate) => candidate.level === 1 && completedWorldIds.has(candidate.id))
+      .flatMap((source) => {
+        const neighbors = CONNECTIONS.flatMap(([a, b]) =>
+          a === source.id ? [b] : b === source.id ? [a] : [],
+        )
+          .filter((id) =>
+            !completedWorldIds.has(id) &&
+            !usedTargets.has(id) &&
+            booksForWorld(id).length > 0,
+          )
+          .sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0))
+        const targetId = neighbors[0]
+        if (!targetId) return []
+        usedTargets.add(targetId)
+        return [{ from: source.id, to: targetId }]
+      })
+  }, [completedWorldIds, scores])
+
+  const focusWorld = useCallback((worldId: string, zoomLevel = 1, panelVisible = panelOpen) => {
+    if (typeof window === 'undefined' || window.innerWidth > 760) return
+    const map = mapRef.current
+    const focus = WORLDS.find((item) => item.id === worldId)
+    if (!map || !focus) return
+
+    const mapRect = map.getBoundingClientRect()
+    const panel = panelVisible ? map.querySelector<HTMLElement>('.panel') : null
+    const panelTop = panel && !panel.classList.contains('off')
+      ? panel.getBoundingClientRect().top
+      : mapRect.bottom
+    const openHeight = Math.max(80, panelTop - mapRect.top)
+    const desiredY = panelVisible
+      ? Math.min(openHeight * 0.44, mapRect.height * 0.26)
+      : mapRect.height / 2
+    const scaleY = mapRect.height * 0.3 * zoomLevel
+    const targetY = focus.position.y + (mapRect.height / 2 - desiredY) / scaleY
+
+    setTarget({
+      x: clamp(focus.position.x),
+      y: clamp(targetY, 2.2),
+      z: zoomLevel,
+    })
+  }, [panelOpen])
+
+  useEffect(() => {
+    if (answersReady) focusWorld(selectedId, 1, panelOpen)
+  }, [answersReady, selectedId, panelOpen, focusWorld])
 
   const pick = (id: string) => { setPicked(id); setPanelOpen(true) }
   const toggleSavedBook = (book: Book, themeId: string) => {
@@ -186,11 +278,10 @@ function Universe() {
       const viewCenterY = rect.top + rect.height / 2
       const anchorX = pinch.startX + (pinch.startCenterX - viewCenterX) / (sx * pinch.startZoom)
       const anchorY = pinch.startY + (pinch.startCenterY - viewCenterY) / (sy * pinch.startZoom)
-      const clamp = (value: number) => Math.min(1.3, Math.max(-1.3, value))
       setTarget((t) => ({
         ...t,
         x: clamp(anchorX - (centerX - viewCenterX) / (sx * zoom)),
-        y: clamp(anchorY - (centerY - viewCenterY) / (sy * zoom)),
+        y: clamp(anchorY - (centerY - viewCenterY) / (sy * zoom), 2.2),
         z: zoom,
       }))
       return
@@ -214,11 +305,10 @@ function Universe() {
     const available = width - (wide && panelOpen ? 350 : 0)
     const sx = Math.max(1, Math.min(available * 0.4, height * 0.62))
     const sy = Math.max(1, height * (wide ? 0.36 : 0.3))
-    const clamp = (value: number) => Math.min(1.3, Math.max(-1.3, value))
     setTarget((t) => ({
       ...t,
       x: clamp(t.x - dx / (sx * t.z)),
-      y: clamp(t.y - dy / (sy * t.z)),
+      y: clamp(t.y - dy / (sy * t.z), 2.2),
     }))
   }
   const finishPointer = (pointerId: number, map: HTMLDivElement) => {
@@ -264,11 +354,10 @@ function Universe() {
       const available = width - (wide && panelOpen ? 350 : 0)
       const sx = Math.max(1, Math.min(available * 0.4, height * 0.62))
       const sy = Math.max(1, height * (wide ? 0.36 : 0.3))
-      const clamp = (value: number) => Math.min(1.3, Math.max(-1.3, value))
       setTarget((t) => ({
         ...t,
         x: clamp(t.x + dx / (sx * t.z)),
-        y: clamp(t.y + dy / (sy * t.z)),
+        y: clamp(t.y + dy / (sy * t.z), 2.2),
       }))
     }
     const onPointerEndOutside = (event: PointerEvent) => {
@@ -302,14 +391,25 @@ function Universe() {
           <div className={`api-mode-note${apiConfigured ? ' is-live' : ''}`} role="status">
             {apiConfigured ? 'API接続モード' : 'ローカルデモ（API未接続）'}
           </div>
-          <UniverseCanvas worlds={visible} tiers={tiers} selectedId={selectedId} target={target} panelOpen={panelOpen} onPick={pick} />
+          <UniverseCanvas
+              worlds={visible}
+              tiers={tiers}
+              completedWorldIds={completedWorldIds}
+              syncLinks={syncLinks}
+              selectedId={selectedId}
+              target={target}
+              panelOpen={panelOpen}
+              onPick={pick}
+            />
           <div className="zc">
             <button aria-label="拡大" onClick={() => zoom(1.3)}>＋</button>
             <button aria-label="縮小" onClick={() => zoom(1 / 1.3)}>－</button>
-            <button aria-label="中心に戻す" onClick={() => setTarget(HOME)}>◎</button>
+            <button aria-label="中心に戻す" onClick={() => { if (window.innerWidth <= 760) focusWorld(selectedId, 1, panelOpen); else setTarget(HOME) }}>◎</button>
           </div>
-          <div className="lgd">
-            <div><s />{apiConfigured ? 'おすすめ上位' : '興味が強い'}</div><div><s className="b" />{apiConfigured ? 'おすすめ候補' : '少し気になる'}</div><div><s className="c" />{apiConfigured ? 'これから探索' : 'まだ未知の領域'}</div>
+          <div className="lgd" role="list" aria-label="星の等級">
+            <div role="listitem" aria-label={`一等星：${apiConfigured ? 'おすすめ上位' : '興味が強い'}`}><s aria-hidden="true" />一等星</div>
+            <div role="listitem" aria-label={`二等星：${apiConfigured ? 'おすすめ候補' : '少し気になる'}`}><s className="b" aria-hidden="true" />二等星</div>
+            <div role="listitem" aria-label={`三等星：${apiConfigured ? 'これから探索' : 'まだ未知の領域'}`}><s className="c" aria-hidden="true" />三等星</div>
           </div>
           <div className="hint">気になる星を選んで、その世界の本をのぞいてみよう</div>
           <WorldDetailPanel world={world} root={root} kids={kids} tier={tiers[world.id]}
@@ -319,8 +419,26 @@ function Universe() {
             loading={apiConfigured && bookLoading} error={apiConfigured ? bookError : null}
             onRetry={() => setBookRetry((count) => count + 1)} apiMode={apiConfigured} library={library} open={panelOpen}
             onToggleSave={(book) => toggleSavedBook(book, world.id)}
+              readIds={readIds}
+              recs={apiConfigured ? [] : recs}
+              onRead={(book) => {
+                const key = libraryBookKey(book)
+                if (library[key]?.status === 'read') return
+                if (!library[key]) saveBook(book, world.id)
+                setReadStatus(key, 'read')
+              }}
             onPick={pick} onClose={() => setPanelOpen(false)}
-            onExplore={() => setTarget({ x: world.position.x, y: world.position.y, z: 1.8 })} />
+            onExplore={() => {
+                if (window.innerWidth <= 760) {
+                  focusWorld(world.id, 1.25, panelOpen)
+                } else {
+                  setTarget({
+                    x: world.position.x,
+                    y: world.position.y,
+                    z: 1.8,
+                  })
+                }
+              }} />
         </> : <div className="map-loading" role="status" aria-live="polite">星座図を準備しています…</div>}
       </div>
     </section>
