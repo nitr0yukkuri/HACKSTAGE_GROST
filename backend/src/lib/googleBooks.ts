@@ -309,62 +309,135 @@ const LONE_SURROGATE_PATTERN =
 const WHITESPACE_PATTERN = /[\s\u3000]+/g;
 
 /**
- * 文の区切り。句点「。」の直後で区切る（「。」は前の文に含める）。
- * 末尾に句点がなくても最後の断片は1つの文として扱う。
+ * 定型注意書きの目印。テンプレートと一緒に現れたときだけ、そのテンプレートごと除去する。
+ * 注意ラベルは中に `【`・`】` を含めない（外側の `【` を飲み込まない）。
  */
-const SENTENCE_BOUNDARY_PATTERN = /(?<=。)/;
+const NOTICE_MARKER_SOURCE = '※|＊|\\*|【[^【】]{0,20}注意[^【】]{0,20}】';
 
 /**
- * 注意書きの目印の直前で区切る。連続する目印は先頭の直前だけで区切る（R3）。
- * 実データでは「…最適の一冊 ※この電子書籍は…」のようにキャッチコピーの直後（句点なし）に
- * 目印が続くため、目印を文の開始として扱い、キャッチコピーを巻き込んで消さない。
- * 除去しなかった場合は区切った文字列をそのまま連結するので、本文は変化しない。
- * `【…注意…】` は長さを制限して走査量を抑える（R4）。
+ * 目印の連なり（目印の間の空白を含む）。テンプレートの直前だけを対象にする。
+ * 走査量を抑えるため、先頭の1個に続く目印は上限付きにする。
  */
-const NOTICE_MARKER_BOUNDARY_PATTERN =
-  /(?<![※＊】])(?=※|＊|【[^】]{0,20}注意[^】]{0,20}】)/;
-
-/** 文頭の注意書きの目印。判定には目印の有無だけを使う（R4 の長さ制限込み）。 */
-const NOTICE_MARKER_PREFIX_PATTERN = /^(?:※|＊|【[^】]{0,20}注意[^】]{0,20}】)/;
-
-/** 除去で空になった括弧だけを片付けるための対応表（開き → 閉じ）。 */
-const BRACKET_PAIRS: Readonly<Record<string, string>> = {
-  '（': '）',
-  '(': ')',
-  '【': '】',
-  '［': '］',
-};
-/** 開き括弧。 */
-const OPENING_BRACKETS: ReadonlySet<string> = new Set(Object.keys(BRACKET_PAIRS));
-/** 閉じ括弧。 */
-const CLOSING_BRACKETS: ReadonlySet<string> = new Set(['）', ')', '】', '］']);
-/** 空白1文字（全角空白を含む）。 */
-const SPACE_CHAR_PATTERN = /\s/;
+const MAX_NOTICE_MARKER_RUN = 4;
+const NOTICE_MARKER_PREFIX_SOURCE =
+  `(?:${NOTICE_MARKER_SOURCE})(?:\\s*(?:${NOTICE_MARKER_SOURCE})){0,${MAX_NOTICE_MARKER_RUN}}`;
 
 /**
- * A. 電子書籍の端末・レイアウトの注意の主語。商品・電子書籍・電子版は目印なしでも対象。
- * 作品・書籍は本文の文と紛らわしいので、目印がある場合だけ対象にする（R1）。
+ * 定型注意書きの終わり。直後が「空白1つ＋句点」「文末」「閉じ括弧」の場合だけ一致する。
+ * 空白の後に普通の文字が続く場合（タグ由来の空白など）は一致させない。
+ * 句点は任意で一緒に消し、閉じ括弧は消費しない。
  */
-const DEVICE_NOTICE_SUBJECT_PATTERN = /(?:この|本)(?:商品|電子書籍|電子版)は/;
-const DEVICE_NOTICE_MARKED_SUBJECT_PATTERN = /(?:この|本)(?:作品|書籍)は/;
-/** A. 主語の後に現れれば端末・レイアウトの注意と分かる語。 */
-const DEVICE_NOTICE_TERM_PATTERN = /タブレット|ディスプレイ|端末|固定レイアウト|リフロー/;
-/** A. 注意書きの述語。端末語と同時に現れるときだけ端末の注意と判定する（R1）。 */
-const NOTICE_PREDICATE_PATTERN = /適して|配信|作成され|閲覧|お読み|ご覧|推奨/;
-/** B. 機能制限の注意の語。 */
-const FUNCTION_LIMIT_PATTERN = /文字だけを拡大|文字列のハイライト|辞書の参照/;
-/** B. 機能制限を表す否定表現。機能語と同時に現れるときだけ対象にする（R1）。 */
-const FUNCTION_LIMIT_NEGATION_PATTERN =
-  /できません|(?:使用|利用)(?:でき|いただけ)ません|(?:使用|利用)できない/;
-/** C. 電子版（電子書籍版）と紙版の差の注意。3条件がそろった文だけを対象にする。 */
-const DIGITAL_EDITION_PATTERN = /電子書籍版|電子版/;
-const PRINT_EDITION_PATTERN = /紙版|紙の書籍|紙の本|紙書籍/;
-const EDITION_DIFFERENCE_PATTERN = /異な|含まれ|付属し|掲載され|収録され/;
-/** C. 電子版が主語として現れる形。目印がない文でもこの形なら対象にする（R1）。 */
-const DIGITAL_EDITION_SUBJECT_PATTERN = /(?:電子版|電子書籍版)(?:は|では|には)/;
-/** 注意書きの直後に続く「続きの文」の語。 */
-const NOTICE_CONTINUATION_PATTERN =
-  /掲載されていない|収録されていない|掲載されません|収録されません|お使いの端末|立ち読みファイル|閲覧環境/;
+const BOILERPLATE_END_SOURCE = '(?:\\s?。|(?=\\s?(?:[）)］】]|$)))';
+
+/**
+ * 目印の付かない定型注意書きの始まり。文頭・句読点・開き括弧の直後だけを許し、
+ * その間の空白は最大1つとする。文の途中からの一致を防ぐ。
+ * 文頭は `^` で、句読点・開き括弧は直後の空白だけを消費する後読みで表す。
+ */
+const BOILERPLATE_START_SOURCE = '(?:^|(?<=[。！？!?（(［【]))\\s?';
+
+/** 掲載物。T5 の続きと T6 で共通に使う。 */
+const MISSING_CONTENT_SOURCE = '(?:ページ|記事|写真|画像|付録)';
+
+/** T1 端末の注意。固定レイアウトの前置きは任意。 */
+const DEVICE_NOTICE_TEMPLATE_SOURCE =
+  'この(?:商品|電子書籍)は' +
+  '(?:固定レイアウト(?:型)?で(?:作成|配信)されており、)?' +
+  'タブレットなど大きい?ディスプレイを備えた端末で読むことに適しています' +
+  BOILERPLATE_END_SOURCE;
+
+/** T2 閲覧の推奨。「など(の大きな)端末」「端末」の言い回しだけを列挙する。 */
+const VIEWING_RECOMMENDATION_TEMPLATE_SOURCE =
+  'この(?:商品|電子書籍|書籍)は' +
+  '(?:タブレット|スマートフォン|大きい?ディスプレイ)' +
+  '(?:など(?:の(?:大きな)?端末)?|端末)?' +
+  'での閲覧を(?:推奨|おすすめ|お勧め)しています' +
+  BOILERPLATE_END_SOURCE;
+
+/** T3 固定レイアウトの配信。 */
+const FIXED_LAYOUT_TEMPLATE_SOURCE =
+  'この(?:商品|電子書籍)は固定レイアウト(?:型)?で(?:配信|作成)されて(?:おります|います)' +
+  BOILERPLATE_END_SOURCE;
+
+/** T4 機能制限で列挙する機能名。 */
+const FUNCTION_LIMIT_NAME_SOURCE = '(?:文字列のハイライト|検索|辞書の参照|引用)';
+
+/** T4 機能制限。「また、」「固定レイアウト型は」の前置きは任意。 */
+const FUNCTION_LIMIT_TEMPLATE_SOURCE =
+  '(?:また、|固定レイアウト型は)?' +
+  '文字だけを拡大すること(?:や、?|、)' +
+  FUNCTION_LIMIT_NAME_SOURCE +
+  `(?:(?:、|や)${FUNCTION_LIMIT_NAME_SOURCE}){0,3}` +
+  'など(?:の機能)?が(?:使用|利用)できません' +
+  BOILERPLATE_END_SOURCE;
+
+/** T5 電子版と紙版の差。終わり方を列挙し、任意文字の幅を持たせない。 */
+const DIGITAL_PRINT_DIFFERENCE_BODY_SOURCE =
+  '電子版(?:は|では)、?紙(?:版|の書籍|の本)(?:とは|と)、?' +
+  '(?:コンテンツ|内容)が一部' +
+  '(?:異なります' +
+  '|異なる場合があります' +
+  `|異なる場合や、掲載されない${MISSING_CONTENT_SOURCE}` +
+  `(?:(?:、|や)${MISSING_CONTENT_SOURCE}){0,2}がある場合があります)`;
+
+/** T6 の本文。T5 の直後にだけ続く「掲載されていない…」の文。 */
+const MISSING_PAGES_BODY_SOURCE =
+  `掲載されていない${MISSING_CONTENT_SOURCE}` +
+  `(?:(?:、|や)${MISSING_CONTENT_SOURCE}){0,2}があります`;
+
+/**
+ * T5 と、その直後（句点または空白、目印だけを挟む）に続く T6 をまとめて一致させる。
+ * T6 が続かない場合は T5 単独の終わりとして判定する。
+ */
+const DIGITAL_PRINT_DIFFERENCE_ITEM_SOURCE =
+  `${DIGITAL_PRINT_DIFFERENCE_BODY_SOURCE}` +
+  `(?:\\s?(?:。\\s*|\\s+)(?:${NOTICE_MARKER_PREFIX_SOURCE}\\s*)?` +
+  `${MISSING_PAGES_BODY_SOURCE}${BOILERPLATE_END_SOURCE}` +
+  `|${BOILERPLATE_END_SOURCE})`;
+
+/** 定型文1件の本体（始まりと終わりの境界は外側で付ける）。 */
+const BOILERPLATE_ITEM_SOURCE =
+  `(?:${DEVICE_NOTICE_TEMPLATE_SOURCE}` +
+  `|${VIEWING_RECOMMENDATION_TEMPLATE_SOURCE}` +
+  `|${FIXED_LAYOUT_TEMPLATE_SOURCE}` +
+  `|${FUNCTION_LIMIT_TEMPLATE_SOURCE}` +
+  `|${DIGITAL_PRINT_DIFFERENCE_ITEM_SOURCE})`;
+
+/**
+ * 定型注意書き1件。ストアの決まった文面そのものに一致した部分だけを消す。
+ * 任意文字の幅は持たせず、言い回しを列挙する。
+ * 始まりは「直前の目印の連なり」か「文頭・句読点・開き括弧の直後」に限り、
+ * 終わりは「空白1つ＋句点」「文末」「閉じ括弧」に限る。目印とテンプレートの間の
+ * 空白（正規化後の半角スペース）も一緒に消す。
+ */
+const BOILERPLATE_TEMPLATE_SOURCE =
+  `(?:${NOTICE_MARKER_PREFIX_SOURCE}\\s*${BOILERPLATE_ITEM_SOURCE}` +
+  `|${BOILERPLATE_START_SOURCE}${BOILERPLATE_ITEM_SOURCE})`;
+
+const BOILERPLATE_TEMPLATE_PATTERN = new RegExp(BOILERPLATE_TEMPLATE_SOURCE, 'g');
+
+/**
+ * 除去したテンプレートを一時的に置く印。入力の制御文字はこの段階より前に消しているため、
+ * 本文中の文字と衝突しない。
+ */
+const REMOVED_TEMPLATE_MARK = '\u0001';
+
+/**
+ * 中身がテンプレート（除去済みの印）と空白だけの括弧。括弧ごと消す。
+ * 元から空の括弧（`print()` など）を消さないよう、印を1つ以上含むことを条件にする。
+ */
+const TEMPLATE_ONLY_BRACKET_CONTENT_SOURCE =
+  `\\s*${REMOVED_TEMPLATE_MARK}[${REMOVED_TEMPLATE_MARK}\\s]*`;
+const TEMPLATE_ONLY_BRACKET_PATTERN = new RegExp(
+  `（${TEMPLATE_ONLY_BRACKET_CONTENT_SOURCE}）` +
+    `|\\(${TEMPLATE_ONLY_BRACKET_CONTENT_SOURCE}\\)` +
+    `|［${TEMPLATE_ONLY_BRACKET_CONTENT_SOURCE}］` +
+    `|【${TEMPLATE_ONLY_BRACKET_CONTENT_SOURCE}】`,
+  'g',
+);
+
+/** 入れ子の括弧を外側から順に片付けるための最大回数。 */
+const MAX_BRACKET_STRIP_PASSES = 3;
 
 /**
  * 内容紹介の整形。
@@ -394,108 +467,21 @@ export function formatDescription(value: unknown): string | null {
 }
 
 /**
- * 電子書籍ストア由来の定型注意書きを文単位で取り除く。
- * 直前の文を除去したときだけ、続きの文（「掲載されていない…」など）も連続して除去する。
- * 空白だけの断片は判定せず、続きの文の連鎖も切らない（R2）。
- * 文の一部だけを消すことはしない。除去で空になった括弧だけを片付ける（R3・R5）。
+ * 電子書籍ストア由来の定型注意書きを、決まった文面に一致した部分だけ取り除く。
+ * テンプレートに含まれない言い回しは残すので、未知の注意書きが残っても本文は消さない。
+ * 目印はテンプレートと一緒にだけ消し、`【入門】` のような普通の見出しは残す。
+ * 中身がテンプレートと空白だけの括弧は括弧ごと消し、括弧の外の本文には触れない。
+ * 入れ子の括弧（`（［※…］）` など）は、内側から順に最大 `MAX_BRACKET_STRIP_PASSES` 回片付ける。
  */
 function stripEbookBoilerplate(text: string): string {
-  const sentences = text
-    .split(SENTENCE_BOUNDARY_PATTERN)
-    .flatMap((sentence) => sentence.split(NOTICE_MARKER_BOUNDARY_PATTERN))
-    .filter((sentence) => sentence !== '');
-  let result = '';
-  let removedSinceKept = false;
-  for (const sentence of sentences) {
-    if (sentence.trim() === '') {
-      // 空白だけの断片は出力に残し、連鎖の状態は変えない（最後に空白を正規化する）。
-      result += sentence;
-      continue;
-    }
-    const removed =
-      isBoilerplateSentence(sentence) || (removedSinceKept && isContinuationSentence(sentence));
-    if (removed) {
-      removedSinceKept = true;
-      continue;
-    }
-    let piece = sentence;
-    if (removedSinceKept) {
-      // 除去を挟んで開き括弧と閉じ括弧だけが残った場合に限り、その括弧を取り除く。
-      // 本文に元からある空の括弧は対象にしない（R5）。
-      const withoutBrackets = removeBracketPairAroundRemoval(result, piece);
-      if (withoutBrackets !== null) {
-        result = withoutBrackets.before;
-        piece = withoutBrackets.after;
-      }
-    }
-    result += piece;
-    removedSinceKept = false;
+  let current = text.replace(BOILERPLATE_TEMPLATE_PATTERN, REMOVED_TEMPLATE_MARK);
+  for (let pass = 0; pass < MAX_BRACKET_STRIP_PASSES; pass += 1) {
+    // 片付けた括弧も印に置き換え、外側の括弧をもう一度判定できるようにする。
+    const next = current.replace(TEMPLATE_ONLY_BRACKET_PATTERN, REMOVED_TEMPLATE_MARK);
+    if (next === current) break;
+    current = next;
   }
-  return result;
-}
-
-/** 末尾の空白を無視して、開き括弧で終わっていればその位置を返す。 */
-function findTrailingOpenBracket(text: string): number {
-  let index = text.length - 1;
-  while (index >= 0 && SPACE_CHAR_PATTERN.test(text[index] ?? '')) index -= 1;
-  if (index < 0) return -1;
-  return OPENING_BRACKETS.has(text[index] ?? '') ? index : -1;
-}
-
-/** 先頭の空白を無視して、閉じ括弧で始まっていればその位置を返す。 */
-function findLeadingCloseBracket(text: string): number {
-  let index = 0;
-  while (index < text.length && SPACE_CHAR_PATTERN.test(text[index] ?? '')) index += 1;
-  if (index >= text.length) return -1;
-  return CLOSING_BRACKETS.has(text[index] ?? '') ? index : -1;
-}
-
-/** 除去を挟んで対応する開き・閉じ括弧だけが残っているとき、両方を取り除く。 */
-function removeBracketPairAroundRemoval(
-  before: string,
-  after: string,
-): { before: string; after: string } | null {
-  const openIndex = findTrailingOpenBracket(before);
-  if (openIndex < 0) return null;
-  const closeIndex = findLeadingCloseBracket(after);
-  if (closeIndex < 0) return null;
-  const openChar = before[openIndex] ?? '';
-  const closeChar = after[closeIndex] ?? '';
-  if (BRACKET_PAIRS[openChar] !== closeChar) return null;
-  return { before: before.slice(0, openIndex), after: after.slice(closeIndex + 1) };
-}
-
-/** A〜C のいずれかに当てはまる「注意書きの文」か。文頭の空白は無視して判定する。 */
-function isBoilerplateSentence(sentence: string): boolean {
-  const text = sentence.trimStart();
-  if (text === '') return false;
-  const marked = NOTICE_MARKER_PREFIX_PATTERN.test(text);
-  if (isDeviceNotice(text, marked)) return true;
-  if (FUNCTION_LIMIT_PATTERN.test(text) && FUNCTION_LIMIT_NEGATION_PATTERN.test(text)) return true;
-  return (
-    (marked || DIGITAL_EDITION_SUBJECT_PATTERN.test(text)) &&
-    DIGITAL_EDITION_PATTERN.test(text) &&
-    PRINT_EDITION_PATTERN.test(text) &&
-    EDITION_DIFFERENCE_PATTERN.test(text)
-  );
-}
-
-/** A. 端末・レイアウトの注意か。主語の後に端末語があり、同じ文に述語があること。 */
-function isDeviceNotice(text: string, marked: boolean): boolean {
-  if (matchesDeviceNotice(text, DEVICE_NOTICE_SUBJECT_PATTERN)) return true;
-  return marked && matchesDeviceNotice(text, DEVICE_NOTICE_MARKED_SUBJECT_PATTERN);
-}
-
-function matchesDeviceNotice(text: string, subjectPattern: RegExp): boolean {
-  const subject = subjectPattern.exec(text);
-  if (!subject) return false;
-  const rest = text.slice(subject.index + subject[0].length);
-  return DEVICE_NOTICE_TERM_PATTERN.test(rest) && NOTICE_PREDICATE_PATTERN.test(text);
-}
-
-/** 直前の注意書きに続く「続きの文」か。 */
-function isContinuationSentence(sentence: string): boolean {
-  return NOTICE_CONTINUATION_PATTERN.test(sentence);
+  return current.split(REMOVED_TEMPLATE_MARK).join('');
 }
 
 function removeHtmlTags(value: string): string {

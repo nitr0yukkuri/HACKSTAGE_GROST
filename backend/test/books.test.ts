@@ -1120,12 +1120,14 @@ describe('formatDescription', () => {
     expect(formatDescription(input)).toBe('■見どころ：豊富な図解で基礎から学べます。');
   });
 
-  it('【…注意…】の目印が付いた注意書きと続きの文を連続して除去する', () => {
+  it('【…注意…】の目印が付いた定型注意書きを除去し、未知の言い回しは残す', () => {
     const input =
       '【電子版のご注意】この電子書籍は固定レイアウト型で配信されております。' +
       'お使いの端末によっては表示が異なります。' +
       '本文の紹介です。';
-    expect(formatDescription(input)).toBe('本文の紹介です。');
+    expect(formatDescription(input)).toBe(
+      'お使いの端末によっては表示が異なります。本文の紹介です。',
+    );
   });
 
   it('注意書きだけの紹介文は null にする', () => {
@@ -1135,7 +1137,6 @@ describe('formatDescription', () => {
           '※電子版は、紙版とは内容が一部異なります。',
       ),
     ).toBeNull();
-    expect(formatDescription('文字列のハイライトや検索ができません。')).toBeNull();
   });
 
   it('注意書きの形をしていない文は目印が付いていても残す', () => {
@@ -1217,16 +1218,15 @@ describe('formatDescription', () => {
     expect(
       formatDescription('※この書籍はタブレットでの閲覧を推奨しています。 本文です。'),
     ).toBe('本文です。');
-    expect(formatDescription('電子書籍版は、紙版と内容が異なります。 本文です。')).toBe('本文です。');
   });
 
-  it('空白だけの断片があっても続きの文を連鎖して除去する（改訂1・R2）', () => {
+  it('T5 の直後に空白と目印を挟んだ続きの文も除去する（改訂1・F3）', () => {
     const input =
       '※電子版は、紙版とはコンテンツが一部異なります。 ※掲載されていないページがあります。本文です。';
     expect(formatDescription(input)).toBe('本文です。');
   });
 
-  it('連続した目印と、除去で空になった括弧を片付ける（改訂1・R3）', () => {
+  it('連続した目印をまとめて除去し、テンプレートだけの括弧を片付ける（改訂1・F2）', () => {
     expect(
       formatDescription(
         '※※※この商品はタブレットなど大きいディスプレイを備えた端末で読むことに適しています。' +
@@ -1249,6 +1249,215 @@ describe('formatDescription', () => {
     expect(
       formatDescription('print() の例です。（※電子版は、紙版とはコンテンツが一部異なります。）続きです。'),
     ).toBe('print() の例です。続きです。');
+  });
+
+  it('句点のない定型注意書きは本文を消さないため残す（改訂3）', () => {
+    const input =
+      '※この商品はタブレットなど大きいディスプレイを備えた端末で読むことに適しています ' +
+      '木と木材の性質から、建材としての木材全般を紹介。';
+    expect(formatDescription(input)).toBe(input);
+  });
+
+  it('本の内容として端末・機能・電子版に触れる文は残す（初回・GPT Sol の3文）', () => {
+    const contents = [
+      'この電子書籍は、タブレット向けに配信するアプリの開発手順を解説します。',
+      '辞書の参照方法を説明しますが、翻訳の正確さまでは保証できません。',
+      '電子版では紙版と異なる組版の設計手法を解説します。',
+    ];
+    for (const content of contents) {
+      expect(formatDescription(content)).toBe(content);
+    }
+  });
+
+  it('テンプレートに一致しない注意書き風の文と見出しは残す（初回）', () => {
+    const contents = [
+      '※本書は2010年刊行の同名書籍の改訂版です。',
+      '文字列のハイライトや検索ができません。',
+      '【目次】第1章 はじめに。',
+      // 「電子書籍版」はストアの定型文面（テンプレート）に含まれない。
+      '電子書籍版は、紙版と内容が異なります。 本文です。',
+    ];
+    for (const content of contents) {
+      expect(formatDescription(content)).toBe(content);
+    }
+  });
+
+  it('括弧の中がテンプレートだけなら括弧ごと消し、本文が混ざれば括弧は残す（初回）', () => {
+    for (const bracket of [
+      ['（', '）'],
+      ['(', ')'],
+      ['［', '］'],
+      ['【', '】'],
+    ] as const) {
+      const [open, close] = bracket;
+      const onlyTemplate = `本文です。${open}※電子版は、紙版とはコンテンツが一部異なります。${close}次に、閲覧環境の整え方を解説します。`;
+      expect(formatDescription(onlyTemplate)).toBe(
+        '本文です。次に、閲覧環境の整え方を解説します。',
+      );
+      const withBody = `本文です。${open}※電子版は、紙版とはコンテンツが一部異なります。詳しくは書店でご確認ください。${close}続きです。`;
+      expect(formatDescription(withBody)).toBe(
+        `本文です。${open}詳しくは書店でご確認ください。${close}続きです。`,
+      );
+    }
+  });
+
+  it('1万文字程度のテンプレート風入力でも 50ms 程度で終わる（初回）', () => {
+    const input =
+      'この商品はタブレットなど'.repeat(450) + '文字だけを拡大することや'.repeat(450);
+    const startedAt = performance.now();
+    formatDescription(input);
+    const elapsedMs = performance.now() - startedAt;
+    expect(elapsedMs).toBeLessThan(50);
+  });
+
+  it('目印とテンプレートの間の空白も一緒に除去する（改訂1・F1）', () => {
+    expect(
+      formatDescription(
+        '本文です。※ この商品はタブレットなど大きいディスプレイを備えた端末で読むことに適しています。次です。',
+      ),
+    ).toBe('本文です。次です。');
+    expect(
+      formatDescription(
+        '<br>※<br>この商品はタブレットなど大きいディスプレイを備えた端末で読むことに適しています。<br>本文です。',
+      ),
+    ).toBe('本文です。');
+    expect(
+      formatDescription('本文です。（※ 電子版は、紙版とはコンテンツが一部異なります。）次です。'),
+    ).toBe('本文です。次です。');
+  });
+
+  it('目印の連なりが上限を超えても走査が重くならない（改訂1・F2）', () => {
+    const inputs = [
+      '※ '.repeat(5_000) + '本文です。',
+      '※ '.repeat(5_000) +
+        'この商品はタブレットなど大きいディスプレイを備えた端末で読むことに適しています。本文です。',
+    ];
+    for (const input of inputs) {
+      const startedAt = performance.now();
+      const formatted = formatDescription(input);
+      const elapsedMs = performance.now() - startedAt;
+      expect(elapsedMs).toBeLessThan(50);
+      expect(formatted).not.toBeNull();
+    }
+    // 目印だけの入力は目印を残す（テンプレートに付いていない目印は消さない）。
+    expect(formatDescription('※ ※ ※ 本文です。')).toBe('※ ※ ※ 本文です。');
+  });
+
+  it('T5 の可変部を非貪欲にしても定型文を最後まで除去する（改訂1・F3）', () => {
+    expect(
+      formatDescription('電子版は、紙版とはコンテンツが一部異なります。本文です。'),
+    ).toBe('本文です。');
+    expect(
+      formatDescription(
+        '電子版では、紙の書籍と内容が一部異なる場合や、掲載されないページ、写真がある場合があります。本文です。',
+      ),
+    ).toBe('本文です。');
+  });
+
+  it('テンプレートだけを囲む入れ子の括弧も外側まで除去する（改訂1・F4）', () => {
+    expect(
+      formatDescription('本文です。（［※電子版は、紙版とはコンテンツが一部異なります。］）次です。'),
+    ).toBe('本文です。次です。');
+    expect(
+      formatDescription('本文です。［（※電子版は、紙版とはコンテンツが一部異なります。）］次です。'),
+    ).toBe('本文です。次です。');
+  });
+
+  it('目印の付いた閲覧推奨と、複数・空白区切りの目印を除去する（改訂1・F5）', () => {
+    expect(
+      formatDescription('【入門】※この書籍はタブレットでの閲覧を推奨しています。本文です。'),
+    ).toBe('【入門】本文です。');
+    expect(
+      formatDescription('※　＊この書籍はタブレットでの閲覧を推奨しています。本文です。'),
+    ).toBe('本文です。');
+  });
+
+  it('T5 が閉じ括弧を越えて本文を消さない（改訂2）', () => {
+    const input = '本文です。（電子版は、紙版とは内容が一部異なる）その理由は後半にあります。';
+    expect(formatDescription(input)).toBe(input);
+  });
+
+  it('T5 が定型句の途中で終わって接続助詞を残さない（改訂2）', () => {
+    const input = '電子版は、紙版とは内容が一部異なりますが、その違いを図解で解説します。';
+    expect(formatDescription(input)).toBe(input);
+  });
+
+  it('T6 が本文を吸い込まない（改訂2）', () => {
+    expect(
+      formatDescription(
+        '※電子版は、紙版とはコンテンツが一部異なります。 掲載されていないページを探す方法があります。',
+      ),
+    ).toBe('掲載されていないページを探す方法があります。');
+  });
+
+  it('注意ラベルが外側の【を飲み込まない（改訂2）', () => {
+    expect(
+      formatDescription(
+        '本文です。【【ご注意】この書籍はタブレットでの閲覧を推奨しています。】次です。',
+      ),
+    ).toBe('本文です。次です。');
+  });
+
+  it('T2 の直後に本文が続く場合は消さない（改訂2）', () => {
+    const input = 'この書籍はタブレットでの閲覧を推奨しています端末の選び方も解説。';
+    expect(formatDescription(input)).toBe(input);
+  });
+
+  it('T4 の直後に本文が続く場合は消さない（改訂2）', () => {
+    const input =
+      '文字だけを拡大することや、辞書の参照などの機能が使用できません端末の選び方も解説。';
+    expect(formatDescription(input)).toBe(input);
+  });
+
+  it('T5 の終わり方の列挙が実データの2変種を覆う（改訂2）', () => {
+    expect(
+      formatDescription('※電子版は、紙版とはコンテンツが一部異なる場合があります。本文です。'),
+    ).toBe('本文です。');
+    expect(
+      formatDescription(
+        '※電子版では、紙の本と内容が一部異なる場合や、掲載されない画像、付録がある場合があります。本文です。',
+      ),
+    ).toBe('本文です。');
+  });
+
+  it('本文中に定型文を引用している場合は消さない（改訂3で改善）', () => {
+    const input =
+      'この本の帯には「この商品はタブレットなど大きいディスプレイを備えた端末で読むことに適しています。」と書かれています。';
+    expect(formatDescription(input)).toBe(input);
+  });
+
+  it('T5・T4 が文の途中から一致しない（改訂3）', () => {
+    const contents = [
+      '本書が解説する電子版は、紙版とは内容が一部異なります。',
+      '電子版では文字だけを拡大することや、辞書の参照などの機能が使用できません。',
+    ];
+    for (const content of contents) {
+      expect(formatDescription(content)).toBe(content);
+    }
+  });
+
+  it('タグ由来の空白を終端とみなさない（改訂3）', () => {
+    expect(
+      formatDescription(
+        '電子版は、紙版とは内容が一部異なります<span>が、その違いを図解で解説します。</span>',
+      ),
+    ).toBe('電子版は、紙版とは内容が一部異なります が、その違いを図解で解説します。');
+  });
+
+  it('語尾と句点の間の空白も一緒に除去する（改訂3）', () => {
+    expect(formatDescription('電子版は、紙版とは内容が一部異なります 。次です。')).toBe('次です。');
+  });
+
+  it('句点・開き括弧の直後の定型注意書きは除去する（改訂3）', () => {
+    expect(
+      formatDescription('本文です。電子版は、紙版とはコンテンツが一部異なります。次です。'),
+    ).toBe('本文です。次です。');
+    expect(
+      formatDescription('本文です。 電子版は、紙版とはコンテンツが一部異なります。次です。'),
+    ).toBe('本文です。次です。');
+    expect(
+      formatDescription('（電子版は、紙版とはコンテンツが一部異なります。）次です。'),
+    ).toBe('次です。');
   });
 });
 
