@@ -3,6 +3,15 @@ import type { Book } from '../types/hoshirube'
 type DemoCover = { googleBooksId: string } | { imageUrl: string }
 
 const DEMO_COVERS: Record<string, DemoCover> = {
+  philosophy: { googleBooksId: 'a-FQAAAACAAJ' },
+  guns: { googleBooksId: '0jJvJgAACAAJ' },
+  thinking: { googleBooksId: 'tNDza_Pb0UMC' },
+  cosmos: { googleBooksId: '9KVaAAAAYAAJ' },
+  code: { googleBooksId: '-9ajDwAAQBAJ' },
+  idea: { googleBooksId: 'EQBbxugrFvsC' },
+  artstory: { googleBooksId: 'vLNozQEACAAJ' },
+  language: { googleBooksId: 'dTUlkgAACAAJ' },
+  kokoro: { googleBooksId: 'D80qPwAACAAJ' },
   sophie: { imageUrl: 'https://nhkbook.s3-ap-northeast-1.amazonaws.com/image/goods/000000802231995/000000802231995_01_580.jpg' },
   ennui: { imageUrl: 'https://www.shinchosha.co.jp/images_v2/book/cover/103541/103541_xl.jpg' },
   sapiens: { googleBooksId: '9r8_DwAAQBAJ' },
