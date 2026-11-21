@@ -21,7 +21,7 @@ type RGB = [number, number, number]
 const TIER_COLOR: RGB[] = [[0.45, 0.5, 0.68], [0.55, 0.66, 0.92], [0.78, 0.9, 1]]
 const GOLD: RGB = [1, 0.72, 0.4]
 const COMPLETE: RGB = [1, 0.67, 0.28]
-const SYNC: RGB = [0.5, 0.84, 1]
+const SYNC: RGB = [0.25, 0.76, 1]
 const CHILD: RGB = [0.7, 0.95, 1]
 const edgeKey = (a: string, b: string) => a < b ? `${a}:${b}` : `${b}:${a}`
 
@@ -98,14 +98,15 @@ export default function UniverseCanvas(props: Props) {
         const synced = syncTargetIds.has(w.id)
         const c = complete ? COMPLETE : synced ? SYNC : sel ? GOLD : w.level === 2 ? CHILD : TIER_COLOR[t]
         const completionScale = complete ? (w.level === 1 ? 1.5 : 1.25) : 1
-        const syncScale = synced ? 1.12 + syncPulse * 0.2 : 1
+        const syncScale = synced ? 1.18 + syncPulse * 0.24 : 1
         const size = (w.level === 2 ? 38 : [24, 40, 62][t]) * (sel ? 1.3 : 1) * completionScale * syncScale * kk
         const baseBrightness = [0.5, 0.85, 1][t] * (w.level === 2 ? 0.9 : 1) * kk
         const brightness = complete
           ? Math.min(1, baseBrightness * 1.35)
           : synced
-            ? Math.min(1, baseBrightness * (1.12 + syncPulse * 0.25))
+            ? Math.min(1, baseBrightness * (1.2 + syncPulse * 0.3))
             : baseBrightness
+        if (synced) pts.push(x * dp, y * dp, size * 1.65 * dp, 0.28 + syncPulse * 0.1, (x * 0.013) % 1, ...SYNC)
         pts.push(x * dp, y * dp, size * dp, brightness, (x * 0.013) % 1, ...c)
       })
 
