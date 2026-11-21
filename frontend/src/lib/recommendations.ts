@@ -24,7 +24,7 @@ const CURIOSITY_BOOST: Record<OnboardingAnswers['curiosity'][number], Boost> = {
   city_origins: { his: 2, soc: 1 },
 }
 
-export const TIER_LABEL = ['まだ未知の領域', '少し気になる', '興味が強い'] as const
+export const TIER_LABEL = ['三等星 · まだ未知の領域', '二等星 · 少し気になる', '一等星 · 興味が強い'] as const
 export const tierOf = (v: number): Tier => (v >= 3 ? 2 : v >= 1 ? 1 : 0)
 
 export function calcScores(a: OnboardingAnswers): Scores {
