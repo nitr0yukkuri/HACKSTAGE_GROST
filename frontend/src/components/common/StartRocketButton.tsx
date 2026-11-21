@@ -61,8 +61,6 @@ export default function StartRocketButton() {
           <circle cx="16" cy="8" r="1.6" fill="currentColor" />
         </svg>
       </span>
-
-      <span className="hoshirube-rocket-button__burst" aria-hidden="true" />
     </button>
   )
 }

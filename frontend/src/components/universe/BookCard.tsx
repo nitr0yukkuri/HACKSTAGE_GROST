@@ -3,8 +3,6 @@ import type { Book } from '../../types/hoshirube'
 
 interface Props {
   book: Book
-  saved: boolean
-  onToggleSave: () => void
   read?: boolean
   onRead?: (book: Book) => void
   onExplore?: () => void
@@ -13,8 +11,6 @@ interface Props {
 
 export default function BookCard({
   book,
-  saved,
-  onToggleSave,
   read = false,
   onRead,
   onExplore,
@@ -72,20 +68,6 @@ export default function BookCard({
           )}
 
           <div className="book-actions">
-            <button
-              type="button"
-              className={`book-save${saved ? ' is-saved' : ''}`}
-              aria-pressed={saved}
-              aria-label={
-                saved
-                  ? `${book.title}の保存を解除`
-                  : `${book.title}を本棚に保存`
-              }
-              onClick={onToggleSave}
-            >
-              {saved ? '保存済み' : '本棚に保存'}
-            </button>
-
             {onRead && (
               <button
                 type="button"
