@@ -91,6 +91,78 @@
       "name": "つくる思考",
       "parentId": "mon",
       "searchQuery": "エンジニア 思考法"
+    },
+    {
+      "id": "his-japan",
+      "name": "日本史",
+      "parentId": "his",
+      "searchQuery": "日本史 入門"
+    },
+    {
+      "id": "his-world",
+      "name": "世界史",
+      "parentId": "his",
+      "searchQuery": "世界史 入門"
+    },
+    {
+      "id": "soc-psych",
+      "name": "心理・人間関係",
+      "parentId": "soc",
+      "searchQuery": "心理学 人間関係"
+    },
+    {
+      "id": "soc-systems",
+      "name": "社会のしくみ",
+      "parentId": "soc",
+      "searchQuery": "社会制度 社会学"
+    },
+    {
+      "id": "sci-space",
+      "name": "宇宙・天文学",
+      "parentId": "sci",
+      "searchQuery": "宇宙 天文学"
+    },
+    {
+      "id": "sci-life",
+      "name": "生物・生命",
+      "parentId": "sci",
+      "searchQuery": "生物学 生命科学"
+    },
+    {
+      "id": "art-visual",
+      "name": "絵画・デザイン",
+      "parentId": "art",
+      "searchQuery": "絵画 デザイン"
+    },
+    {
+      "id": "art-music",
+      "name": "音楽・表現",
+      "parentId": "art",
+      "searchQuery": "音楽 芸術 表現"
+    },
+    {
+      "id": "lan-linguistics",
+      "name": "言語学",
+      "parentId": "lan",
+      "searchQuery": "言語学 入門"
+    },
+    {
+      "id": "lan-world",
+      "name": "世界の言葉",
+      "parentId": "lan",
+      "searchQuery": "外国語 世界の言語"
+    },
+    {
+      "id": "lit-fiction",
+      "name": "小説・物語",
+      "parentId": "lit",
+      "searchQuery": "小説 文学"
+    },
+    {
+      "id": "lit-classics",
+      "name": "詩・古典",
+      "parentId": "lit",
+      "searchQuery": "詩 古典文学"
     }
   ]
 }
