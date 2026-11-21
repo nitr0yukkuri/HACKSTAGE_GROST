@@ -33,7 +33,7 @@ const CURIOSITY_QUESTION: Question = {
 
 const THEMES_QUESTION: Question = {
   kind: 'genres',
-  title: ['気になるテーマを', 'いくつか選んでみてください'],
+  title: ['気になるテーマを', 'いくつか選んでみて！'],
   subtitle: '（あとで変更できます）',
 }
 
