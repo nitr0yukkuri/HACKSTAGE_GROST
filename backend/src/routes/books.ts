@@ -7,6 +7,7 @@ import { AppError, type ErrorDetail } from '../lib/errors.js';
 import {
   codePointLength,
   getHeader,
+  getQueryParameter,
   jsonResponse,
   utf8ByteLength,
   MAX_CONTEXT_BYTES,
@@ -24,6 +25,8 @@ import { validateSeedInput, type ValidatedSeedInput } from '../lib/validation.js
 export interface BookItem extends NormalizedBook {
   source: 'google_books';
   recommendationReason: string | null;
+  /** AI の選定で選ばれた本は 'ai'、検索順から入れた本（補充・退避）は 'search'。 */
+  selectedBy: 'ai' | 'search';
 }
 
 export interface Warning {
@@ -58,6 +61,8 @@ export const MIN_RECOMMENDED_BOOKS = 3;
  */
 export const RECOMMENDATION_PROMPT_VERSION = 7;
 const CONTEXT_HEADER = 'X-Discovery-Context';
+/** `include` の判定に使う最大文字数。極端に長い値でも処理量を増やさない。 */
+const INCLUDE_PARAMETER_MAX_CHARS = 200;
 
 export async function handleBooks(
   ctx: RequestContext,
@@ -88,8 +93,6 @@ export async function handleBooks(
 
   let items: BookItem[];
   let reasonUnavailable = false;
-  /** 冊数の下限までサーバー側で補った本。理由なしの警告から除外する。 */
-  let filledIds = new Set<string>();
 
   if (candidates.length === 0) {
     items = [];
@@ -113,9 +116,7 @@ export async function handleBooks(
         reasonUnavailable = true;
       } else {
         // キャッシュには AI の選定だけを保存しているため、同じ候補から補充を再計算する。
-        const filled = fillToMinimum(restored, candidates);
-        items = filled.items;
-        filledIds = filled.filledIds;
+        items = fillToMinimum(restored, candidates);
       }
     } else if (ctx.deadline.expired()) {
       items = selectBooks(normalized);
@@ -133,9 +134,7 @@ export async function handleBooks(
         reasonUnavailable = true;
       } else {
         // AI の選定が3冊未満なら、未選定の候補から検索順で補う（理由は null）。
-        const filled = fillToMinimum(selection.items, candidates);
-        items = filled.items;
-        filledIds = filled.filledIds;
+        items = fillToMinimum(selection.items, candidates);
         // 紹介文があるのに理由がない本は、理由の取得に失敗したものとして扱う。
         if (selection.reasonMissing) reasonUnavailable = true;
         // 紹介文があるのに理由が付かなかった選定は、次回に理由を付け直せるよう再利用しない。
@@ -149,13 +148,13 @@ export async function handleBooks(
   }
 
   // キャッシュから復元した選定でも、紹介文があるのに理由がない場合は警告する。
-  // 冊数の下限まで補った本は意図した動作なので、理由なしの対象から除く。
+  // 検索順から入れた本（補充・退避）は意図した動作なので、理由なしの対象から除く。
   if (
     items.some(
       (item) =>
         item.description !== null &&
         item.recommendationReason === null &&
-        !filledIds.has(item.id),
+        item.selectedBy === 'ai',
     )
   ) {
     reasonUnavailable = true;
@@ -177,7 +176,30 @@ export async function handleBooks(
     });
   }
 
-  return jsonResponse(200, { requestId: ctx.requestId, themeId, items, warnings });
+  return jsonResponse(200, {
+    requestId: ctx.requestId,
+    themeId,
+    items: includesSelectedBy(ctx) ? items : items.map(withoutSelectedBy),
+    warnings,
+  });
+}
+
+/**
+ * クエリ `include` に `selectedBy` が完全一致のトークンとして含まれるか。
+ * API Gateway が同名パラメータをカンマで連結する場合も同じ扱いにする。
+ * 200文字（Unicode コードポイント）を超える値は全体を無視し、未知のトークンはエラーにしない。
+ */
+function includesSelectedBy(ctx: RequestContext): boolean {
+  const { value } = getQueryParameter(ctx.event, 'include');
+  if (value === undefined) return false;
+  if (codePointLength(value) > INCLUDE_PARAMETER_MAX_CHARS) return false;
+  return value.split(',').some((token) => token.trim() === 'selectedBy');
+}
+
+/** オプトインがないときの応答。今の main と同じく `selectedBy` を含めない。 */
+function withoutSelectedBy(item: BookItem): Omit<BookItem, 'selectedBy'> {
+  const { selectedBy: _selectedBy, ...rest } = item;
+  return rest;
 }
 
 interface SelectionInput {
@@ -292,7 +314,7 @@ async function selectRecommendedBooks(
     const candidate = candidateById.get(entry.id);
     if (!candidate) return null;
     if (candidate.description !== null && entry.reason === null) reasonMissing = true;
-    items.push(toBookItem(candidate, entry.reason));
+    items.push(toBookItem(candidate, entry.reason, 'ai'));
   }
   return {
     items,
@@ -303,8 +325,12 @@ async function selectRecommendedBooks(
   };
 }
 
-function toBookItem(book: NormalizedBook, reason: string | null): BookItem {
-  return { ...book, source: 'google_books', recommendationReason: reason };
+function toBookItem(
+  book: NormalizedBook,
+  reason: string | null,
+  selectedBy: BookItem['selectedBy'],
+): BookItem {
+  return { ...book, source: 'google_books', recommendationReason: reason, selectedBy };
 }
 
 /** キャッシュ済みの順位付き選定を、現在の候補の書誌へ戻す。候補にない ID があれば null。 */
@@ -319,7 +345,7 @@ function restoreCachedSelection(
     if (!candidate) return null;
     // 紹介文のない候補に理由が付いていたキャッシュは採用しない。
     if (candidate.description === null && entry.reason !== null) return null;
-    items.push(toBookItem(candidate, entry.reason));
+    items.push(toBookItem(candidate, entry.reason, 'ai'));
   }
   return items;
 }
@@ -333,9 +359,8 @@ function restoreCachedSelection(
 export function fillToMinimum(
   items: BookItem[],
   candidates: readonly NormalizedBook[],
-): { items: BookItem[]; filledIds: Set<string> } {
-  const filledIds = new Set<string>();
-  if (items.length >= MIN_RECOMMENDED_BOOKS) return { items, filledIds };
+): BookItem[] {
+  if (items.length >= MIN_RECOMMENDED_BOOKS) return items;
 
   const selectedIds = new Set(items.map((item) => item.id));
   const filled = [...items];
@@ -345,12 +370,11 @@ export function fillToMinimum(
       if (filled.length >= MIN_RECOMMENDED_BOOKS) break;
       if (selectedIds.has(candidate.id)) continue;
       if ((candidate.description !== null) !== requireDescription) continue;
-      filled.push(toBookItem(candidate, null));
-      filledIds.add(candidate.id);
+      filled.push(toBookItem(candidate, null, 'search'));
     }
     if (filled.length >= MIN_RECOMMENDED_BOOKS) break;
   }
-  return { items: filled, filledIds };
+  return filled;
 }
 
 function decodeThemeId(raw: string): string | null {
@@ -551,7 +575,7 @@ export function selectBooks(books: readonly NormalizedBook[]): BookItem[] {
   for (let index = 0; index < candidates.length; index += 1) {
     const book = candidates[index];
     if (!book || !chosen.has(index)) continue;
-    selected.push(toBookItem(book, null));
+    selected.push(toBookItem(book, null, 'search'));
   }
   return selected;
 }

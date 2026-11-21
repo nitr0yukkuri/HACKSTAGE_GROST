@@ -48,6 +48,8 @@ function parseBook(value: unknown): Book | null {
     coverUrl: normalizeBookCoverUrl(typeof value.coverUrl === 'string' ? value.coverUrl : null, value.source),
     description: value.description,
     recommendationReason: value.recommendationReason,
+    // 保存済みデータには selectedBy がない。正しい値のときだけ保持し、本自体は捨てない。
+    ...(value.selectedBy === 'ai' || value.selectedBy === 'search' ? { selectedBy: value.selectedBy } : {}),
     infoUrl: value.infoUrl,
     worldIds: [...new Set(value.worldIds)],
   }

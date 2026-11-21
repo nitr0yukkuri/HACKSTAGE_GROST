@@ -212,6 +212,12 @@ function makeSeedThemes(answers) {
   return unique.map((themeId) => ({ themeId, searchQuery: themesById.get(themeId).searchQuery }))
 }
 
+const includesSelectedBy = (value) => {
+  if (value === null) return false
+  if ([...value].length > 200) return false
+  return value.split(',').some((token) => token.trim() === 'selectedBy')
+}
+
 function mockBooks(themeId) {
   const theme = themesById.get(themeId)
   return [
@@ -220,16 +226,19 @@ function mockBooks(themeId) {
       authors: ['ほしるべ モック著者'], coverUrl: null,
       description: `${theme.name}の基本的な考え方を、身近な例とともに紹介するモック書籍データです。`,
       recommendationReason: `回答した興味から${theme.name}の入口を探せるように用意した、モックのおすすめ理由です。`, infoUrl: null,
+      selectedBy: 'ai',
     },
     {
       id: `mock-${themeId}-002`, source: 'google_books', title: `${theme.name}の見方が変わる本`,
       authors: [], coverUrl: null, description: null, recommendationReason: null, infoUrl: null,
+      selectedBy: 'ai',
     },
     {
       id: `mock-${themeId}-003`, source: 'google_books', title: `はじめての${theme.name}`,
       authors: ['テスト 著者'], coverUrl: null,
       description: `${theme.name}を初めて学ぶ人向けのモック紹介文です。`,
       recommendationReason: null, infoUrl: null,
+      selectedBy: 'search',
     },
   ]
 }
@@ -319,6 +328,10 @@ const server = createServer(async (request, response) => {
         return
       }
       const searchQuery = url.searchParams.get('q')
+      const includeValues = url.searchParams.getAll('include')
+      const includeSelectedBy = includesSelectedBy(
+        includeValues.length > 0 ? includeValues.join(',') : null,
+      )
       if (searchQuery === null || searchQuery.trim().length === 0 || Array.from(searchQuery).length > 128 || searchQuery !== searchQuery.trim()) {
         finish(422, { code: 'VALIDATION_ERROR', message: '検索語を確認してください。', details: [detail('q', 'INVALID_REQUEST_SHAPE')] }, true)
         return
@@ -356,10 +369,13 @@ const server = createServer(async (request, response) => {
       if (!empty && items.some((item) => item.description === null)) {
         warnings.push({ code: 'INSUFFICIENT_BOOK_METADATA', message: '内容紹介がない本では、おすすめ理由の根拠が不足しています。' })
       }
-      if (warn || (!empty && items.some((item) => item.recommendationReason === null && item.description !== null))) {
+      if (warn || (!empty && items.some((item) => item.recommendationReason === null && item.description !== null && item.selectedBy === 'ai'))) {
         warnings.push({ code: 'RECOMMENDATION_REASON_UNAVAILABLE', message: '一部の本では、回答に沿ったおすすめ理由を用意できませんでした。' })
       }
-      finish(200, { themeId, items, warnings })
+      const responseItems = includeSelectedBy
+        ? items
+        : items.map(({ selectedBy, ...rest }) => rest)
+      finish(200, { themeId, items: responseItems, warnings })
       return
     }
 

@@ -149,6 +149,8 @@ export function seedEventBase64(body: string, requestId?: string): APIGatewayPro
 export function booksEvent(options: {
   themeId?: string;
   q?: string | null;
+  /** 既定は `selectedBy`（画面と同じオプトイン）。null で include を付けない。 */
+  include?: string | null;
   context?: unknown;
   contextValue?: string;
   omitContext?: boolean;
@@ -159,6 +161,8 @@ export function booksEvent(options: {
   const query: Record<string, string> = {};
   const q = options.q === undefined ? 'プログラミング 入門' : options.q;
   if (q !== null) query.q = q;
+  const include = options.include === undefined ? 'selectedBy' : options.include;
+  if (include !== null) query.include = include;
 
   const headers: Record<string, string | undefined> = {};
   if (!options.omitContext) {

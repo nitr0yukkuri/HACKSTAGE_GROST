@@ -244,7 +244,10 @@ function consistencyProblems(specValue, themeList, catalogEntries) {
   expect(qParam?.schema?.type === 'string', 'GET の q が文字列ではありません')
   expect(qParam?.schema?.minLength === 1 && qParam?.schema?.maxLength === 128, 'GET の q の長さ条件が一致しません')
   const queryNames = parameters.filter((parameter) => parameter?.in === 'query').map((parameter) => parameter?.name)
-  expect(sameArray(queryNames, ['q']), 'GET のクエリが q だけではありません')
+  expect(sameArray(queryNames, ['q', 'include']), 'GET のクエリが q と include ではありません')
+  const includeParam = findParameter(parameters, 'query', 'include')
+  expect(includeParam?.required === false, 'GET の include が任意ではありません')
+  expect(includeParam?.schema?.type === 'string', 'GET の include が文字列ではありません')
 
   const contextParam = findParameter(parameters, 'header', 'X-Discovery-Context')
   expect(contextParam?.required === true, 'GET の X-Discovery-Context が必須ではありません')
@@ -387,11 +390,11 @@ for (const name of SEED_EXAMPLE_NAMES) {
   })
 }
 
-test('GETはqだけで本文なし', () => {
+test('GETはqとincludeだけで本文なし', () => {
   assert.equal(booksGet.requestBody, undefined)
   assert.deepEqual(
     booksGet.parameters.filter((parameter) => parameter.in === 'query').map((parameter) => parameter.name),
-    ['q'],
+    ['q', 'include'],
   )
 })
 

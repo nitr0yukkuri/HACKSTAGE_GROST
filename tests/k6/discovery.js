@@ -88,14 +88,15 @@ function seed(context, tag, expectedStatus = 200) {
   return http.post(`${BASE_URL}/v1/discovery/seed`, JSON.stringify(context), params)
 }
 
-function books(themeId, q, context, tag, expectedStatus = 200) {
+function books(themeId, q, context, tag, expectedStatus = 200, include = null) {
   const query = encodeURIComponent(q)
+  const includeQuery = include === null ? '' : `&include=${encodeURIComponent(include)}`
   const params = {
     headers: { 'X-Discovery-Context': JSON.stringify(context) },
     tags: { name: 'theme-books', case: tag },
   }
   if (expectedStatus !== 200) params.responseCallback = http.expectedStatuses(expectedStatus)
-  return http.get(`${BASE_URL}/v1/themes/${encodeURIComponent(themeId)}/books?q=${query}`, params)
+  return http.get(`${BASE_URL}/v1/themes/${encodeURIComponent(themeId)}/books?q=${query}${includeQuery}`, params)
 }
 
 export default function () {
@@ -112,9 +113,11 @@ export default function () {
   })
   if (seedOk && seeded.status === 200) {
     const firstTheme = seeded.json('themes')[0]
-    const result = books(firstTheme.themeId, firstTheme.searchQuery, NORMAL_CONTEXT, 'v2-books')
+    const result = books(firstTheme.themeId, firstTheme.searchQuery, NORMAL_CONTEXT, 'v2-books', 200, 'selectedBy')
     check(result, {
       'books responds 200': (response) => response.status === 200,
+      'books items is an array': (response) => Array.isArray(response.json('items')),
+      'books returns at least one item': (response) => (response.json('items') ?? []).length >= 1,
       'books theme matches request': (response) => response.json('themeId') === firstTheme.themeId,
       'books stay within the 5 item limit': (response) => (response.json('items') ?? []).length <= 5,
       'book item has required contract fields': (response) => (response.json('items') ?? []).every((book) =>
@@ -122,8 +125,19 @@ export default function () {
         Array.isArray(book.authors) && Object.prototype.hasOwnProperty.call(book, 'coverUrl') &&
         Object.prototype.hasOwnProperty.call(book, 'description') &&
         Object.prototype.hasOwnProperty.call(book, 'recommendationReason') &&
+        Object.prototype.hasOwnProperty.call(book, 'selectedBy') &&
+        (book.selectedBy === 'ai' || book.selectedBy === 'search') &&
         Object.prototype.hasOwnProperty.call(book, 'infoUrl')),
       'book response is no-store': (response) => response.headers['Cache-Control'] === 'no-store',
+    })
+
+    const withoutInclude = books(firstTheme.themeId, firstTheme.searchQuery, NORMAL_CONTEXT, 'v2-books-no-include')
+    check(withoutInclude, {
+      'books without include responds 200': (response) => response.status === 200,
+      'books without include items is an array': (response) => Array.isArray(response.json('items')),
+      'books without include returns at least one item': (response) => (response.json('items') ?? []).length >= 1,
+      'book item omits selectedBy without include': (response) => (response.json('items') ?? []).every((book) =>
+        !Object.prototype.hasOwnProperty.call(book, 'selectedBy')),
     })
   }
 
