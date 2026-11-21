@@ -1,25 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import type { CSSProperties } from 'react'
 import Link from 'next/link'
 import AppHeader from '../../components/common/AppHeader'
+import BookCover from '../../components/common/BookCover'
 import useLibrary from '../../lib/useLibrary'
-import type { Book } from '../../types/hoshirube'
 
 type LibraryFilter = 'all' | 'to_read' | 'read'
 
-function LibraryCover({ book }: { book: Book }) {
-  const hue = (book.title.charCodeAt(0) * 37) % 360
-  return book.coverUrl ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img className="library-book__cover" src={book.coverUrl} alt="" />
-  ) : (
-    <span className="library-book__cover" style={{ '--cover-hue': hue } as CSSProperties} aria-hidden="true">
-      {book.title.slice(0, 1)}
-    </span>
-  )
-}
 
 export default function LibraryClient() {
   const { entries, ready, setReadStatus, remove } = useLibrary()
@@ -78,7 +66,7 @@ export default function LibraryClient() {
               {visibleBooks.map(({ key, book, status }) => (
                 <li className="library-book" key={key}>
                   <div className="library-book__identity">
-                    <LibraryCover book={book} />
+                    <BookCover book={book} size="library" />
                     <div className="library-book__meta">
                       <h2>{book.title}</h2>
                       <p>{book.authors.length ? book.authors.join('、') : '著者情報なし'}</p>
