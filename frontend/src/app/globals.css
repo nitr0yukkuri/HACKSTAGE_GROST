@@ -139,10 +139,13 @@ h2{margin:22px 0 6px;font-size:clamp(19px,3.6vw,24px);line-height:1.6}
 .library-book__meta p{margin:2px 0 0;overflow:hidden;color:#aebfe2;font-size:16px;text-overflow:ellipsis;white-space:nowrap}
 .library-book__status{justify-self:center;padding:4px 18px;border:1px solid rgba(130,170,255,.92);border-radius:999px;color:#c6d8ff;font-size:14px;white-space:nowrap}
 .library-book__status.is-read{border-color:var(--gold);color:var(--gold)}
-.library-book__actions{display:flex;align-items:center;gap:22px;white-space:nowrap}
-.library-book__actions button{padding:6px 0;border:0;background:none;color:#b6c7e9;font-size:15px}
-.library-book__actions button:hover{color:#fff}
-.library-book__actions span{width:1px;height:22px;background:rgba(130,170,255,.42)}
+.library-book__actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap}
+.library-book__actions button{min-height:38px;padding:7px 12px;border:1px solid rgba(130,170,255,.42);border-radius:999px;background:rgba(255,255,255,.035);color:#cdd9f5;font-size:13px;line-height:1.35;transition:border-color .18s,background .18s,color .18s,transform .18s}
+.library-book__actions button:hover{border-color:rgba(160,200,255,.72);background:rgba(50,80,160,.2);color:#fff}
+.library-book__actions button:active{transform:translateY(1px)}
+.library-book__actions .library-book__action--undo:hover{border-color:rgba(255,184,103,.72);background:rgba(255,184,103,.08);color:var(--gold)}
+.library-book__actions .library-book__action--remove{border-color:rgba(255,160,175,.25);background:rgba(150,54,75,.08);color:#e7bdc6}
+.library-book__actions .library-book__action--remove:hover{border-color:rgba(255,160,175,.58);background:rgba(150,54,75,.2);color:#ffdce2}
 .library-empty{display:flex;min-height:290px;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center}
 .library-empty__mark{color:var(--gold);font-size:30px}
 .library-empty h2{margin:6px 0 4px;font-size:21px}
@@ -203,8 +206,8 @@ h2{margin:22px 0 6px;font-size:clamp(19px,3.6vw,24px);line-height:1.6}
 .library-book__meta h2{font-size:17px}
 .library-book__meta p{font-size:14px}
 .library-book__status{grid-column:1;justify-self:start;padding:3px 12px;font-size:14px}
-.library-book__actions{grid-column:1/-1;gap:14px}
-.library-book__actions button{font-size:14px}
+.library-book__actions{grid-column:1/-1;justify-content:flex-end;gap:8px}
+.library-book__actions button{min-height:36px;padding:6px 10px;font-size:12px}
 .library-empty{min-height:260px;padding:24px 10px}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

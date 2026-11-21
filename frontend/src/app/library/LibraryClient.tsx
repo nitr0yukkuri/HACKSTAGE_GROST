@@ -76,13 +76,12 @@ export default function LibraryClient() {
                     {status === 'read' ? '読了' : 'これから読む'}
                   </span>
                   <div className="library-book__actions">
-                    <button type="button" aria-label={status === 'read' ? `${book.title}の読了を取り消す` : `${book.title}を読了にする`}
+                    <button type="button" className="library-book__action--undo" aria-label={status === 'read' ? `${book.title}の読了を取り消す` : `${book.title}を読了にする`}
                       onClick={() => setReadStatus(key, status === 'read' ? 'to_read' : 'read')}>
-                      {status === 'read' ? '読了を取り消す' : '読了にする'}
+                      {status === 'read' ? '未読に戻す' : '読了にする'}
                     </button>
-                    <span aria-hidden="true" />
-                    <button type="button" onClick={() => remove(key)} aria-label={`${book.title}を本棚から解除`}>
-                      保存を解除
+                    <button type="button" className="library-book__action--remove" onClick={() => remove(key)} title="本棚から削除" aria-label={`${book.title}を本棚から解除`}>
+                      本棚から削除
                     </button>
                   </div>
                 </li>
