@@ -1,7 +1,6 @@
 import './globals.css'
 import type { Metadata, Viewport } from 'next'
 import StarfieldBackground from '../components/common/StarfieldBackground'
-import StarCursorTrail from '../components/common/StarCursorTrail'
 
 export const metadata: Metadata = {
   title: 'ほしるべ',
@@ -15,7 +14,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <div className="app">
           <StarfieldBackground />
-          <StarCursorTrail />
           {children}
         </div>
       </body>
