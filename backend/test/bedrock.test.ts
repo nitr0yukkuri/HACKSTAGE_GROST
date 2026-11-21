@@ -74,7 +74,36 @@ interface ToolConfigInput {
   };
 }
 
+interface InferenceConfigInput {
+  inferenceConfig?: { maxTokens?: number; temperature?: number };
+}
+
 describe('BedrockGateway.converseJson', () => {
+  it('temperature を渡すと inferenceConfig.temperature に入る', async () => {
+    const input = { themes: [{ themeId: 'tec', searchQuery: '哲学 入門' }] };
+    const { gateway, commands } = makeGateway([
+      responseWith([{ toolUse: { toolUseId: 't1', name: 'submit_themes', input } }]),
+    ]);
+
+    await gateway.converseJson({ ...BASE_PARAMS, temperature: 0 });
+
+    const sent = commands[0]?.input as InferenceConfigInput;
+    expect(sent.inferenceConfig).toEqual({ maxTokens: 16, temperature: 0 });
+  });
+
+  it('temperature を渡さなければ inferenceConfig に temperature キーを含めない', async () => {
+    const input = { themes: [{ themeId: 'tec', searchQuery: '哲学 入門' }] };
+    const { gateway, commands } = makeGateway([
+      responseWith([{ toolUse: { toolUseId: 't1', name: 'submit_themes', input } }]),
+    ]);
+
+    await gateway.converseJson(BASE_PARAMS);
+
+    const sent = commands[0]?.input as InferenceConfigInput;
+    expect(sent.inferenceConfig).toEqual({ maxTokens: 16 });
+    expect(Object.hasOwn(sent.inferenceConfig ?? {}, 'temperature')).toBe(false);
+  });
+
   it('toolConfig と toolChoice を送り、toolUse.input を返す', async () => {
     const input = { themes: [{ themeId: 'tec', searchQuery: '哲学 入門' }] };
     const { gateway, commands } = makeGateway([

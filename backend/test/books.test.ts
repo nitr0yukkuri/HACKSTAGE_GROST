@@ -14,11 +14,14 @@ import {
 import { silentLogger, type LogRecord, type Logger } from '../src/lib/log.js';
 import {
   MAX_RECOMMENDATION_CANDIDATES,
+  MIN_RECOMMENDED_BOOKS,
   RECOMMENDATION_PROMPT_VERSION,
   buildRecommendationCandidates,
   buildRecommendationCacheKey,
+  fillToMinimum,
   parseRecommendations,
   parseRecommendationsObject,
+  type BookItem,
 } from '../src/routes/books.js';
 import {
   bedrockStub,
@@ -1305,8 +1308,9 @@ describe('推薦理由のメモリキャッシュ', () => {
 
     const first = await harness.handler(booksEvent());
     const firstBody = parseJson<BooksResponseBody>(first.body);
-    expect(firstBody.items.map((item) => item.id)).toEqual(['vol-1']);
-    expect(firstBody.items[0]?.recommendationReason).toBeNull();
+    // 1冊だけの選定でも、候補が2冊なので2冊まで補う。
+    expect(firstBody.items.map((item) => item.id)).toEqual(['vol-1', 'vol-2']);
+    expect(firstBody.items.map((item) => item.recommendationReason)).toEqual([null, null]);
     expect(firstBody.warnings.map((warning) => warning.code)).toEqual([
       'RECOMMENDATION_REASON_UNAVAILABLE',
     ]);
@@ -2228,6 +2232,8 @@ describe('推薦選定の tool use', () => {
 
     const call = harness.bedrock.jsonCalls[0];
     expect(call?.tool.name).toBe('submit_recommendations');
+    // 同じ条件での選定・冊数のぶれを抑えるため、選定の呼び出しだけ temperature 0 にする。
+    expect(call?.temperature).toBe(0);
     const schema = call?.tool.inputSchema as {
       properties?: {
         recommendations?: {
@@ -2429,8 +2435,13 @@ describe('順位付き推薦の候補選定と検証', () => {
     const response = await harness.handler(booksEvent());
     const body = parseJson<BooksResponseBody>(response.body);
     expect(response.statusCode).toBe(200);
-    expect(body.items.map((item) => item.id)).toEqual(['v8']);
-    expect(body.items[0]?.recommendationReason).toBe('八冊目の理由です。');
+    // 13冊目の1冊を選んでも、候補の先頭から下限まで補う。
+    expect(body.items.map((item) => item.id)).toEqual(['v8', 'v1', 'v2']);
+    expect(body.items.map((item) => item.recommendationReason)).toEqual([
+      '八冊目の理由です。',
+      null,
+      null,
+    ]);
     const prompt = harness.bedrock.calls[0]?.user ?? '';
     expect(prompt).toContain('"id":"v12"');
     expect(prompt).not.toContain('"id":"v13"');
@@ -2452,9 +2463,16 @@ describe('順位付き推薦の候補選定と検証', () => {
     const response = await harness.handler(booksEvent());
     const body = parseJson<BooksResponseBody>(response.body);
     expect(response.statusCode).toBe(200);
-    expect(body.items.map((item) => item.id)).toEqual(['d13']);
-    expect(body.items[0]?.recommendationReason).toBe('十三冊目の理由です。');
-    expect(body.warnings).toEqual([]);
+    // 紹介文のある d13 の後ろに、紹介文のない検索順の先頭から補う。
+    expect(body.items.map((item) => item.id)).toEqual(['d13', 'd1', 'd2']);
+    expect(body.items.map((item) => item.recommendationReason)).toEqual([
+      '十三冊目の理由です。',
+      null,
+      null,
+    ]);
+    expect(body.warnings.map((warning) => warning.code)).toEqual([
+      'INSUFFICIENT_BOOK_METADATA',
+    ]);
 
     const prompt = harness.bedrock.calls[0]?.user ?? '';
     expect(prompt).toContain('"id":"d11"');
@@ -2478,10 +2496,12 @@ describe('順位付き推薦の候補選定と検証', () => {
 
     const response = await harness.handler(booksEvent());
     const body = parseJson<BooksResponseBody>(response.body);
-    expect(body.items.map((item) => item.id)).toEqual(['vol-3', 'vol-1']);
+    // AI の推薦順を保ち、選ばれていない vol-2 を検索順で末尾に補う。
+    expect(body.items.map((item) => item.id)).toEqual(['vol-3', 'vol-1', 'vol-2']);
     expect(body.items.map((item) => item.recommendationReason)).toEqual([
       '三冊目の理由です。',
       '一冊目の理由です。',
+      null,
     ]);
   });
 
@@ -2495,9 +2515,19 @@ describe('順位付き推薦の候補選定と検証', () => {
     const second = await harness.handler(booksEvent());
 
     expect(first.statusCode).toBe(200);
-    expect(parseJson<BooksResponseBody>(first.body).items).toEqual([]);
+    // AI の選定は空でも、候補が2冊あるのでその全件で補う。
+    expect(parseJson<BooksResponseBody>(first.body).items.map((item) => item.id)).toEqual([
+      'vol-1',
+      'vol-2',
+    ]);
+    expect(
+      parseJson<BooksResponseBody>(first.body).items.map((item) => item.recommendationReason),
+    ).toEqual([null, null]);
     expect(parseJson<BooksResponseBody>(first.body).warnings).toEqual([]);
-    expect(parseJson<BooksResponseBody>(second.body).items).toEqual([]);
+    expect(parseJson<BooksResponseBody>(second.body).items.map((item) => item.id)).toEqual([
+      'vol-1',
+      'vol-2',
+    ]);
     expect(harness.bedrock.calls).toHaveLength(1);
   });
 
@@ -2653,5 +2683,228 @@ describe('順位付き推薦の候補選定と検証', () => {
     expect(prompt).not.toContain('あ'.repeat(401));
     const body = parseJson<BooksResponseBody>(response.body);
     expect([...(body.items[0]?.description ?? '')]).toHaveLength(1000);
+  });
+});
+
+describe('おすすめ冊数の下限', () => {
+  function describedBook(id: string, description: string | null = '内容紹介です。'): NormalizedBook {
+    return {
+      id,
+      title: `書籍${id}`,
+      authors: ['著者'],
+      coverUrl: null,
+      description,
+      infoUrl: null,
+    };
+  }
+
+  function bookItems(
+    ids: string[],
+    description: string | null = '内容紹介です。',
+  ): BookItem[] {
+    return ids.map((id) => ({
+      ...describedBook(id, description),
+      source: 'google_books',
+      recommendationReason: null,
+    }));
+  }
+
+  it(`MIN_RECOMMENDED_BOOKS は ${MIN_RECOMMENDED_BOOKS}`, () => {
+    expect(MIN_RECOMMENDED_BOOKS).toBe(3);
+  });
+
+  describe('fillToMinimum', () => {
+    it('3冊以上ならそのまま返し、filledIds は空', () => {
+      const items = bookItems(['a', 'b', 'c']);
+      const candidates = ['a', 'b', 'c', 'd'].map((id) => describedBook(id));
+
+      const result = fillToMinimum(items, candidates);
+
+      expect(result.items.map((item) => item.id)).toEqual(['a', 'b', 'c']);
+      expect(result.filledIds.size).toBe(0);
+    });
+
+    it('0冊なら内容紹介のある候補を検索順に3冊補い、理由は null', () => {
+      const candidates = ['a', 'b', 'c', 'd'].map((id) => describedBook(id));
+
+      const result = fillToMinimum([], candidates);
+
+      expect(result.items.map((item) => item.id)).toEqual(['a', 'b', 'c']);
+      expect(result.items.map((item) => item.recommendationReason)).toEqual([null, null, null]);
+      expect([...result.filledIds]).toEqual(['a', 'b', 'c']);
+    });
+
+    it('1冊なら AI の1冊を先頭に保ち、選ばれていない候補を検索順で2冊補う', () => {
+      const candidates = ['a', 'b', 'c', 'd'].map((id) => describedBook(id));
+      const items: BookItem[] = [
+        {
+          ...describedBook('b'),
+          source: 'google_books',
+          recommendationReason: 'AI が選んだ理由です。',
+        },
+      ];
+
+      const result = fillToMinimum(items, candidates);
+
+      expect(result.items.map((item) => item.id)).toEqual(['b', 'a', 'c']);
+      expect(result.items.map((item) => item.recommendationReason)).toEqual([
+        'AI が選んだ理由です。',
+        null,
+        null,
+      ]);
+      expect([...result.filledIds]).toEqual(['a', 'c']);
+    });
+
+    it('検索順が前でも内容紹介のない候補より、後ろの内容紹介のある候補を優先する', () => {
+      const candidates = [
+        describedBook('a', null),
+        describedBook('b', null),
+        describedBook('c'),
+      ];
+
+      const result = fillToMinimum([], candidates);
+
+      // 内容紹介ありの c を先に補い、足りない2冊を検索順の a・b で補う。
+      expect(result.items.map((item) => item.id)).toEqual(['c', 'a', 'b']);
+      expect([...result.filledIds]).toEqual(['c', 'a', 'b']);
+    });
+
+    it('候補が2冊しかなければ2冊までしか補わない', () => {
+      const candidates = ['a', 'b'].map((id) => describedBook(id));
+
+      const result = fillToMinimum([], candidates);
+
+      expect(result.items.map((item) => item.id)).toEqual(['a', 'b']);
+      expect(result.filledIds.size).toBe(2);
+    });
+  });
+
+  describe('handleBooks', () => {
+    it('AI が空配列を返しても、紹介文ありの候補3冊で補い、警告しない', async () => {
+      const harness = createHarness({
+        googleBooks: googleBooksStub(() => defaultVolumes(4)),
+        bedrock: bedrockStub(() => recommendationsJson([])),
+      });
+
+      const response = await harness.handler(booksEvent());
+      const body = parseJson<BooksResponseBody>(response.body);
+
+      expect(body.items.map((item) => item.id)).toEqual(['vol-1', 'vol-2', 'vol-3']);
+      expect(body.items.map((item) => item.recommendationReason)).toEqual([null, null, null]);
+      expect(body.warnings).toEqual([]);
+    });
+
+    it('AI が1冊だけ理由付きで選んだら、末尾2冊を理由 null で補い、警告しない', async () => {
+      const harness = createHarness({
+        googleBooks: googleBooksStub(() => defaultVolumes(4)),
+        bedrock: bedrockStub(() =>
+          recommendationsJson([{ id: 'vol-2', reason: '二冊目の理由です。' }]),
+        ),
+      });
+
+      const response = await harness.handler(booksEvent());
+      const body = parseJson<BooksResponseBody>(response.body);
+
+      expect(body.items.map((item) => item.id)).toEqual(['vol-2', 'vol-1', 'vol-3']);
+      expect(body.items.map((item) => item.recommendationReason)).toEqual([
+        '二冊目の理由です。',
+        null,
+        null,
+      ]);
+      expect(body.warnings).toEqual([]);
+    });
+
+    it('AI が選んだ本の理由が不正なら、補充しても RECOMMENDATION_REASON_UNAVAILABLE を付ける', async () => {
+      const harness = createHarness({
+        googleBooks: googleBooksStub(() => defaultVolumes(4)),
+        bedrock: bedrockStub(() =>
+          recommendationsJson([{ id: 'vol-1', reason: '<b>マークアップ</b>の理由です。' }]),
+        ),
+      });
+
+      const response = await harness.handler(booksEvent());
+      const body = parseJson<BooksResponseBody>(response.body);
+
+      expect(body.items.map((item) => item.id)).toEqual(['vol-1', 'vol-2', 'vol-3']);
+      // AI が選んだ本の理由が不正なので、補った本とは別に警告する。
+      expect(body.warnings.map((warning) => warning.code)).toEqual([
+        'RECOMMENDATION_REASON_UNAVAILABLE',
+      ]);
+    });
+
+    it('紹介文ありが足りず紹介文なしで補ったら、INSUFFICIENT_BOOK_METADATA だけを付ける', async () => {
+      const harness = createHarness({
+        googleBooks: googleBooksStub(() => [
+          volume('with-desc', { description: '説明あり' }),
+          volume('no-desc-1', { description: null }),
+          volume('no-desc-2', { description: null }),
+        ]),
+        bedrock: bedrockStub(() =>
+          recommendationsJson([{ id: 'with-desc', reason: '理由です。' }]),
+        ),
+      });
+
+      const response = await harness.handler(booksEvent());
+      const body = parseJson<BooksResponseBody>(response.body);
+
+      expect(body.items.map((item) => item.id)).toEqual([
+        'with-desc',
+        'no-desc-1',
+        'no-desc-2',
+      ]);
+      expect(body.items.map((item) => item.recommendationReason)).toEqual([
+        '理由です。',
+        null,
+        null,
+      ]);
+      expect(body.warnings.map((warning) => warning.code)).toEqual([
+        'INSUFFICIENT_BOOK_METADATA',
+      ]);
+    });
+
+    it('キャッシュには AI の選定だけを保存し、ヒット時も同じ3冊を返す', async () => {
+      const base = createTtlCache<string, RankedRecommendation[]>({
+        ttlMs: 30 * 60_000,
+        maxEntries: 200,
+      });
+      const stored: RankedRecommendation[][] = [];
+      const recommendationCache = {
+        get: (key: string, now: number) => base.get(key, now),
+        set: (key: string, value: RankedRecommendation[], now: number) => {
+          stored.push(value);
+          base.set(key, value, now);
+        },
+        get size() {
+          return base.size;
+        },
+      };
+      const harness = createHarness({
+        googleBooks: googleBooksStub(() => defaultVolumes(4)),
+        bedrock: bedrockStub(() =>
+          recommendationsJson([{ id: 'vol-2', reason: '二冊目の理由です。' }]),
+        ),
+        recommendationCache,
+      });
+
+      const first = await harness.handler(booksEvent());
+      const second = await harness.handler(booksEvent());
+
+      // キャッシュに残るのは AI の選定1冊だけ（補充分は含まない）。
+      expect(stored).toEqual([[{ id: 'vol-2', reason: '二冊目の理由です。' }]]);
+      expect(harness.bedrock.calls).toHaveLength(1);
+
+      const firstIds = parseJson<BooksResponseBody>(first.body).items.map((item) => item.id);
+      const secondIds = parseJson<BooksResponseBody>(second.body).items.map((item) => item.id);
+      expect(firstIds).toEqual(['vol-2', 'vol-1', 'vol-3']);
+      expect(secondIds).toEqual(firstIds);
+
+      // キャッシュヒット時も、AI の1冊は理由あり・補充2冊は理由 null のまま。
+      const firstReasons = parseJson<BooksResponseBody>(first.body).items.map(
+        (item) => item.recommendationReason,
+      );
+      const secondItems = parseJson<BooksResponseBody>(second.body).items;
+      expect(firstReasons).toEqual(['二冊目の理由です。', null, null]);
+      expect(secondItems.map((item) => item.recommendationReason)).toEqual(firstReasons);
+    });
   });
 });
