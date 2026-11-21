@@ -4,7 +4,6 @@ import type { Book, Tier, World } from '../../types/hoshirube'
 import { TIER_LABEL } from '../../lib/recommendations'
 import { libraryBookKey, type LibraryState } from '../../lib/library-store'
 import type { BookWarning } from '../../lib/api/discovery'
-import { WORLDS } from '../../data/worlds'
 import BookCard from './BookCard'
 
 interface Props {
@@ -25,7 +24,6 @@ interface Props {
   onToggleSave: (book: Book) => void
   onRead?: (book: Book) => void
   readIds?: ReadonlySet<string>
-  otherWorld?: { worldId: string; book: Book } | null
   onPick: (id: string) => void
   onClose: () => void
   onExplore: () => void
@@ -49,7 +47,6 @@ export default function WorldDetailPanel({
   onToggleSave,
   onRead,
   readIds,
-  otherWorld = null,
   onPick,
   onClose,
   onExplore,
@@ -154,29 +151,8 @@ export default function WorldDetailPanel({
                 role="status"
                 aria-label="この星の本をすべて読了"
               >
-                完読
+                読了
               </span>
-              {otherWorld && (
-                <section className="other-world">
-                  <h4>✨ こちらの世界もいかがですか？</h4>
-                  <ul>
-                    <BookCard
-                      book={otherWorld.book}
-                      saved={Boolean(
-                        library[libraryBookKey(otherWorld.book)],
-                      )}
-                      onToggleSave={() => onToggleSave(otherWorld.book)}
-                      read={isRead(otherWorld.book)}
-                      onRead={onRead}
-                      onExplore={() => onPick(otherWorld.worldId)}
-                      exploreLabel={`${
-                        WORLDS.find((w) => w.id === otherWorld.worldId)
-                          ?.name ?? 'この'
-                      }の星へ →`}
-                    />
-                  </ul>
-                </section>
-              )}
             </>
           ) : null}
         </>
