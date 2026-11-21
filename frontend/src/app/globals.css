@@ -105,8 +105,6 @@ h2{margin:22px 0 6px;font-size:clamp(19px,3.6vw,24px);line-height:1.6}
 .panel-book-meta{min-width:0;overflow:hidden}
 .panel li b{display:block;font-size:14px;line-height:1.4}
 .panel-book-meta b,.panel-book-meta small,.panel-book-meta em{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.book-save{flex:none;max-width:92px;padding:5px 8px;border:1px solid var(--ln);border-radius:999px;background:rgba(255,255,255,.04);color:#cdd9f5;font-size:14px;line-height:1.3;white-space:nowrap}
-.book-save.is-saved{border-color:rgba(255,184,103,.58);color:var(--gold)}
 .panel small{display:block;color:var(--mut);font-size:12px}
 .panel em{display:block;font-style:normal;color:#b3c4e6;font-size:12px;margin-top:2px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
@@ -156,7 +154,7 @@ h2{margin:22px 0 6px;font-size:clamp(19px,3.6vw,24px);line-height:1.6}
 .book-cover--library{width:54px}
 .site-nav{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:4px;min-height:68px;padding:0 10px}
 .site-nav__brand{gap:8px;letter-spacing:.2em;font-size:14px}
-.site-nav__brand span{display:none}
+.site-nav__brand > span:not(.hoshirube-logo){display:none}
 .site-nav__tabs{gap:0}
 .site-nav__tab{min-height:38px;padding:6px 10px;font-size:14px}
 .site-nav__reset{padding:6px 8px;border-radius:10px;font-size:12px}
@@ -212,8 +210,6 @@ h2{margin:22px 0 6px;font-size:clamp(19px,3.6vw,24px);line-height:1.6}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 a.pill{color:inherit;text-decoration:none}
-.api-mode-note{position:absolute;z-index:2;top:14px;left:16px;padding:6px 10px;border:1px solid var(--ln);border-radius:999px;background:rgba(10,18,40,.72);color:var(--mut);font-size:11px;pointer-events:none}
-.api-mode-note.is-live{border-color:rgba(127,208,196,.5);color:#a6e3d8}
 .discovery-gate{display:grid;min-height:100%;place-items:center;padding:24px;text-align:center}
 .discovery-gate>div{max-width:440px;padding:30px;border:1px solid var(--ln);border-radius:20px;background:rgba(9,17,38,.82)}
 .discovery-gate>div>span{color:var(--gold);font-size:28px}
@@ -231,8 +227,422 @@ a.pill{color:inherit;text-decoration:none}
 .panel li .book-description p{margin:4px 0 0;max-height:110px;overflow:auto;white-space:normal;line-height:1.5}
 .panel li .book-info-link{display:inline-block;margin-top:4px;color:#a9c2f5;font-size:11px;text-decoration:underline;text-underline-offset:2px}
 .panel-book-meta em{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:760px){.api-mode-note{top:8px;left:10px}.discovery-gate{padding:12px}.discovery-gate>div{padding:22px}}
+@media(max-width:760px){.discovery-gate{padding:12px}.discovery-gate>div{padding:22px}}
 
+
+/* HOSHIRUBE TITLE EFFECT START */
+.hoshirube-title {
+  display: inline-flex;
+  align-items: baseline;
+  cursor: default;
+}
+
+.hoshirube-letter {
+  display: inline-block;
+  color: #d9edff;
+  background: linear-gradient(
+    120deg,
+    #a9d9ff 0%,
+    #eff9ff 45%,
+    #f5d991 75%,
+    #a9d9ff 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+
+  transform-origin: center bottom;
+  animation: hoshirube-letter-twinkle 4.8s ease-in-out infinite;
+  transition: transform 0.32s ease-in-out, opacity 0.32s ease-in-out, filter 0.32s ease-in-out;
+}
+
+/* 1文字ずつ時間差で輝く */
+.hoshirube-letter:nth-of-type(2) {
+  animation-delay: 0.35s;
+}
+
+.hoshirube-letter:nth-of-type(3) {
+  animation-delay: 0.7s;
+}
+
+.hoshirube-letter:nth-of-type(4) {
+  animation-delay: 1.05s;
+}
+
+.hoshirube-letter:nth-of-type(5) {
+  animation-delay: 1.4s;
+}
+
+@keyframes hoshirube-letter-twinkle {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.82;
+    filter: drop-shadow(0 0 3px rgba(139, 205, 255, 0.3));
+  }
+
+  12% {
+    transform: translateY(-5px);
+    opacity: 1;
+    filter:
+      drop-shadow(0 0 12px rgba(156, 218, 255, 0.9))
+      drop-shadow(0 0 18px rgba(245, 217, 145, 0.5));
+  }
+
+  24% {
+    transform: translateY(0);
+    opacity: 0.9;
+    filter: drop-shadow(0 0 6px rgba(139, 205, 255, 0.4));
+  }
+}
+
+/* 1文字をホバー中は、ほかの文字の通常アニメーションを一時停止 */
+.hoshirube-title:has(.hoshirube-letter:hover)
+  .hoshirube-letter:not(:hover) {
+  animation-play-state: paused;
+}
+
+/* ホバー中は文字を少し浮かせて、光り続ける */
+.hoshirube-letter:hover {
+  animation: none;
+  transform: translateY(-2px) scale(1.06);
+  opacity: 1;
+  filter:
+    drop-shadow(0 0 12px rgba(156, 218, 255, 1))
+    drop-shadow(0 0 20px rgba(245, 217, 145, 0.75));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hoshirube-letter,
+  .hoshirube-letter:hover {
+    animation: none;
+    transform: none;
+  }
+}
+/* HOSHIRUBE TITLE EFFECT END */
+
+
+/* HOSHIRUBE LOGO SPARKLE START */
+.hoshirube-logo {
+  display: inline-block;
+  position: relative;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.hoshirube-logo__star-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  filter: brightness(1);
+  transition: opacity 0.25s ease, filter 0.25s ease;
+}
+
+.hoshirube-logo:hover .hoshirube-logo__star-glow,
+.site-nav__brand:hover .hoshirube-logo__star-glow {
+  opacity: 1;
+  animation: hoshirube-real-star-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes hoshirube-real-star-glow {
+  0%, 100% {
+    filter: brightness(1) drop-shadow(0 0 2px #ffe6a0);
+  }
+
+  50% {
+    filter:
+      brightness(1.8)
+      drop-shadow(0 0 8px #ffe6a0)
+      drop-shadow(0 0 16px rgba(255, 210, 100, 0.8));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hoshirube-logo__star-glow {
+    animation: none !important;
+  }
+}
+/* HOSHIRUBE LOGO SPARKLE END */
+
+/* HOSHIRUBE ROCKET BUTTON START */
+.hoshirube-rocket-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  min-width: 250px;
+  min-height: 66px;
+  padding: 16px 28px;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid rgba(255, 226, 161, .85);
+  border-radius: 999px;
+  background: linear-gradient(110deg, #263f85, #5a69b5, #805eaa);
+  color: #fff8e8;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  cursor: pointer;
+  box-shadow:
+    0 0 18px rgba(122, 156, 255, .24),
+    0 0 30px rgba(255, 213, 139, .1);
+  animation: hoshirube-button-breathe 3s ease-in-out infinite;
+  transition:
+    transform .5s cubic-bezier(.4, 0, .2, 1),
+    box-shadow .3s ease,
+    border-color .3s ease;
+}
+
+.hoshirube-rocket-button__label {
+  position: relative;
+  z-index: 2;
+}
+
+.hoshirube-rocket-button__icon {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  width: 25px;
+  height: 25px;
+  color: #ffe7a6;
+  transition:
+    transform .48s cubic-bezier(.4, 0, .2, 1),
+    filter .35s ease,
+    translate .25s ease-out;
+}
+
+.hoshirube-rocket-button__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.hoshirube-rocket-button__shine {
+  position: absolute;
+  z-index: 1;
+  inset: -100%;
+  background: linear-gradient(
+    110deg,
+    transparent 43%,
+    rgba(255,255,255,.4) 50%,
+    transparent 57%
+  );
+  transform: translateX(-65%);
+  transition: transform .65s ease;
+  pointer-events: none;
+}
+
+.hoshirube-rocket-button:hover,
+.hoshirube-rocket-button:focus-visible {
+  transform: translateY(-4px) scale(1.04);
+  border-color: #fff3cf;
+  box-shadow:
+    0 0 26px rgba(255, 225, 154, .42),
+    0 0 55px rgba(126, 158, 255, .32);
+}
+
+.hoshirube-rocket-button:hover .hoshirube-rocket-button__shine,
+.hoshirube-rocket-button:focus-visible .hoshirube-rocket-button__shine {
+  transform: translateX(65%);
+}
+
+.hoshirube-rocket-button:hover .hoshirube-rocket-button__icon,
+.hoshirube-rocket-button:focus-visible .hoshirube-rocket-button__icon {
+  animation: hoshirube-rocket-float 2.2s ease-in-out infinite;
+  transform: translate(5px, -5px) rotate(12deg);
+  filter: drop-shadow(0 0 8px #ffe4a0);
+}
+
+.hoshirube-rocket-button:focus-visible {
+  outline: 3px solid #fff3cf;
+  outline-offset: 4px;
+}
+
+.hoshirube-rocket-button.is-launching {
+  animation: none;
+  pointer-events: none;
+  box-shadow: 0 0 60px rgba(255, 225, 154, .65);
+}
+
+.hoshirube-rocket-button.is-launching .hoshirube-rocket-button__icon {
+  animation: hoshirube-rocket-launch .6s ease-in forwards;
+}
+
+@keyframes hoshirube-button-breathe {
+  0%, 100% { box-shadow: 0 0 18px rgba(122,156,255,.24); }
+  50% { box-shadow: 0 0 32px rgba(255,220,145,.32); }
+}
+
+@keyframes hoshirube-rocket-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -3px; }
+}
+
+@keyframes hoshirube-rocket-launch {
+  0% { transform: translate(0,0) scale(1); opacity: 1; }
+  100% { transform: translate(65px,-65px) scale(.45); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hoshirube-rocket-button,
+  .hoshirube-rocket-button__icon,
+  .hoshirube-rocket-button__shine {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* HOSHIRUBE ROCKET REFINEMENT START */
+
+/* 夜空とロゴの色に合わせる */
+.hoshirube-rocket-button {
+  border-color: rgba(156, 196, 255, .7);
+  background: linear-gradient(
+    115deg,
+    rgba(13, 28, 66, .96),
+    rgba(29, 57, 116, .96),
+    rgba(42, 82, 151, .94)
+  );
+  color: var(--tx);
+  box-shadow:
+    0 0 18px rgba(80, 130, 255, .22),
+    inset 0 0 18px rgba(156, 196, 255, .08);
+  animation: hoshirube-button-breathe-blue 3s ease-in-out infinite;
+}
+
+/* ロケット本体は星明かりのブルー */
+.hoshirube-rocket-button__icon {
+  color: #d9eaff;
+}
+
+/* 炎：通常時は完全に非表示 */
+.hoshirube-rocket-button__icon::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  bottom: -12px;
+  width: 13px;
+  height: 19px;
+  background: linear-gradient(
+    to bottom,
+    #fff5cc 0%,
+    #ffb867 42%,
+    #ff793d 75%,
+    transparent 100%
+  );
+  clip-path: polygon(
+    50% 0%,
+    85% 38%,
+    100% 100%,
+    50% 77%,
+    0% 100%,
+    15% 38%
+  );
+  transform: rotate(45deg) scale(.35);
+  transform-origin: 50% 15%;
+  opacity: 0;
+  filter: drop-shadow(0 0 5px #ffb867);
+  pointer-events: none;
+}
+
+/* ホバーまたはキーボードフォーカスで点火 */
+.hoshirube-rocket-button:is(:hover, :focus-visible)
+  .hoshirube-rocket-button__icon::before {
+  opacity: 1;
+  animation: hoshirube-rocket-flame .42s ease-in-out infinite alternate;
+}
+
+/* 発射中はカーソルが外れても炎を維持 */
+.hoshirube-rocket-button.is-launching
+  .hoshirube-rocket-button__icon::before {
+  opacity: 1;
+  animation: hoshirube-rocket-flame .24s ease-in-out infinite alternate;
+}
+
+/* ホバー時の光もブルー中心に変更 */
+.hoshirube-rocket-button:is(:hover, :focus-visible) {
+  border-color: #cfe0ff;
+  box-shadow:
+    0 0 24px rgba(156, 196, 255, .45),
+    0 0 48px rgba(80, 130, 255, .25);
+}
+
+.hoshirube-rocket-button:is(:hover, :focus-visible)
+  .hoshirube-rocket-button__icon {
+  filter: drop-shadow(0 0 8px rgba(156, 196, 255, .85));
+}
+
+.hoshirube-rocket-button.is-launching {
+  animation: none;
+  box-shadow: 0 0 55px rgba(156, 196, 255, .65);
+}
+
+@keyframes hoshirube-button-breathe-blue {
+  0%, 100% {
+    box-shadow: 0 0 18px rgba(80, 130, 255, .22);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(125, 176, 255, .4);
+  }
+}
+
+@keyframes hoshirube-rocket-flame {
+  from {
+    transform: rotate(45deg) scale(.35, .5);
+    opacity: .3;
+  }
+  to {
+    transform: rotate(45deg) scale(1, 1.25);
+    opacity: 1;
+  }
+}
+
+/* 動きを減らす設定では炎を静止表示 */
+@media (prefers-reduced-motion: reduce) {
+  .hoshirube-rocket-button,
+  .hoshirube-rocket-button__icon::before {
+    animation: none !important;
+  }
+
+  .hoshirube-rocket-button:is(:hover, :focus-visible)
+    .hoshirube-rocket-button__icon::before {
+    opacity: 1;
+    transform: rotate(45deg) scale(1);
+  }
+}
+
+/* HOSHIRUBE ROCKET REFINEMENT END */
+
+
+/* HOSHIRUBE ROCKET BUTTON END */
+
+/* HOSHIRUBE HERO POSITION START */
+.hoshirube-hero-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateY(-20px);
+}
+/* HOSHIRUBE HERO POSITION END */
+
+/* HOSHIRUBE CURSOR TRAIL START */
+.hoshirube-cursor-trail {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 20;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .hoshirube-cursor-trail {
+    display: none;
+  }
+}
+/* HOSHIRUBE CURSOR TRAIL END */
 
 /* 読了・保存・推薦アクション */
 .panel .book-actions {

@@ -64,7 +64,7 @@ export default function QuestionCard({ step, total, isLastStep, question, answer
       <div className="ft">
         {submitError && <p className="form-error" role="alert">{submitError}</p>}
         {step > 0 && <button className="pill" disabled={!canNext || submitting} onClick={onNext}>
-          {submitting ? '星の候補を読み込んでいます…' : isLastStep ? '星座をつくる ✦' : 'つぎへ →'}
+          {submitting ? '星の候補を読み込んでいます…' : isLastStep ? '星座をつくる' : 'つぎへ →'}
         </button>}
         <button className="bk" disabled={submitting} onClick={onBack}>← 戻る</button>
       </div>

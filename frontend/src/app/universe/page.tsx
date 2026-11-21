@@ -49,7 +49,7 @@ function Universe() {
     setAnswersReady(true)
     setDiscoveryReady(true)
   }, [apiConfigured])
-  const { entries: library, save: saveBook, remove: removeBook, setReadStatus } = useLibrary()
+  const { entries: library, save: saveBook, setReadStatus } = useLibrary()
   const baseScores = useMemo(() => calcScores(answers), [answers])
 
   const history = useMemo<ReadEntry[]>(
@@ -192,11 +192,6 @@ function Universe() {
   }, [answersReady, selectedId, panelOpen, focusWorld])
 
   const pick = (id: string) => { setPicked(id); setPanelOpen(true) }
-  const toggleSavedBook = (book: Book, themeId: string) => {
-    const key = libraryBookKey(book)
-    if (library[key]) removeBook(key)
-    else saveBook(book, themeId)
-  }
   const zoom = (f: number) => setTarget((t) => ({ ...t, z: Math.min(3, Math.max(0.6, t.z * f)) }))
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!answersReady) return
@@ -388,9 +383,6 @@ function Universe() {
             </div>
           </div>
         ) : answersReady && discoveryReady ? <>
-          <div className={`api-mode-note${apiConfigured ? ' is-live' : ''}`} role="status">
-            {apiConfigured ? 'API接続モード' : 'ローカルデモ（API未接続）'}
-          </div>
           <UniverseCanvas
               worlds={visible}
               tiers={tiers}
@@ -418,7 +410,6 @@ function Universe() {
             warnings={apiConfigured && bookResult?.themeId === world.id ? bookResult.warnings : []}
             loading={apiConfigured && bookLoading} error={apiConfigured ? bookError : null}
             onRetry={() => setBookRetry((count) => count + 1)} apiMode={apiConfigured} library={library} open={panelOpen}
-            onToggleSave={(book) => toggleSavedBook(book, world.id)}
               readIds={readIds}
               recs={apiConfigured ? [] : recs}
               onRead={(book) => {

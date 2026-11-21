@@ -21,7 +21,6 @@ interface Props {
   apiMode: boolean
   library: LibraryState
   open: boolean
-  onToggleSave: (book: Book) => void
   onRead?: (book: Book) => void
   readIds?: ReadonlySet<string>
   onPick: (id: string) => void
@@ -44,7 +43,6 @@ export default function WorldDetailPanel({
   apiMode,
   library,
   open,
-  onToggleSave,
   onRead,
   readIds,
   onPick,
@@ -71,8 +69,6 @@ export default function WorldDetailPanel({
           <BookCard
             key={key}
             book={book}
-            saved={Boolean(library[key])}
-            onToggleSave={() => onToggleSave(book)}
             read={isRead(book)}
             onRead={onRead}
           />
