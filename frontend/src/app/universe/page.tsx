@@ -10,7 +10,6 @@ import { CONNECTIONS } from '../../data/connections'
 import {
   applyReadHistory,
   recommendNextInWorld,
-  recommendOtherWorld,
   type ReadEntry,
 } from '../../lib/recommendations'
 import useLibrary from '../../lib/useLibrary'
@@ -104,10 +103,6 @@ function Universe() {
   const selectedId = picked ?? (apiConfigured && discoverySession ? discoverySession.seed.themes[0].themeId : initialWorldId(scores))
   const recs = useMemo(
     () => recommendNextInWorld(selectedId, history),
-    [selectedId, history],
-  )
-  const otherWorld = useMemo(
-    () => recommendOtherWorld(selectedId, history),
     [selectedId, history],
   )
 
@@ -411,8 +406,10 @@ function Universe() {
             <button aria-label="縮小" onClick={() => zoom(1 / 1.3)}>－</button>
             <button aria-label="中心に戻す" onClick={() => { if (window.innerWidth <= 760) focusWorld(selectedId, 1, panelOpen); else setTarget(HOME) }}>◎</button>
           </div>
-          <div className="lgd">
-            <div><s />{apiConfigured ? 'おすすめ上位' : '興味が強い'}</div><div><s className="b" />{apiConfigured ? 'おすすめ候補' : '少し気になる'}</div><div><s className="c" />{apiConfigured ? 'これから探索' : 'まだ未知の領域'}</div>
+          <div className="lgd" role="list" aria-label="星の等級">
+            <div role="listitem" aria-label={`一等星：${apiConfigured ? 'おすすめ上位' : '興味が強い'}`}><s aria-hidden="true" />一等星</div>
+            <div role="listitem" aria-label={`二等星：${apiConfigured ? 'おすすめ候補' : '少し気になる'}`}><s className="b" aria-hidden="true" />二等星</div>
+            <div role="listitem" aria-label={`三等星：${apiConfigured ? 'これから探索' : 'まだ未知の領域'}`}><s className="c" aria-hidden="true" />三等星</div>
           </div>
           <div className="hint">気になる星を選んで、その世界の本をのぞいてみよう</div>
           <WorldDetailPanel world={world} root={root} kids={kids} tier={tiers[world.id]}
@@ -424,7 +421,6 @@ function Universe() {
             onToggleSave={(book) => toggleSavedBook(book, world.id)}
               readIds={readIds}
               recs={apiConfigured ? [] : recs}
-              otherWorld={apiConfigured ? null : otherWorld}
               onRead={(book) => {
                 const key = libraryBookKey(book)
                 if (library[key]?.status === 'read') return
