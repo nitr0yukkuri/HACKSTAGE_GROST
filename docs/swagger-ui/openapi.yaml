@@ -690,7 +690,7 @@ paths:
                     type: array
                     maxItems: 12
                     items:
-                      $ref: '#/components/schemas/BookItem'
+                      $ref: '#/components/schemas/SearchBookItem'
               examples:
                 results:
                   summary: 正規化された検索結果
@@ -883,6 +883,20 @@ paths:
             minLength: 1
             maxLength: 128
           example: プログラミング ものづくり 入門
+        - name: include
+          in: query
+          required: false
+          description: |
+            応答に含める任意の項目。カンマ区切りのトークンで指定する。
+            `selectedBy` を含めると、各本に `selectedBy`（`ai` または `search`）を付ける。
+            指定しない・空・`selectedBy` を含まない場合は、`selectedBy` を含めない
+            （この項目を追加する前の応答と同じ形）。未知のトークンは無視し、エラーにしない。
+            値が200文字（Unicode コードポイント）を超える場合は、値全体を無視して
+            `selectedBy` を含めない。API Gateway が同名パラメータをカンマで連結する場合も
+            同じ扱いにする。
+          schema:
+            type: string
+          example: selectedBy
         - name: X-Discovery-Context
           in: header
           required: true
@@ -931,7 +945,7 @@ paths:
                 $ref: '#/components/schemas/RecommendationResponse'
               examples:
                 success:
-                  summary: 正常（理由あり）
+                  summary: 正常（理由あり・include なし）
                   value:
                     requestId: example-request-001
                     themeId: tec
@@ -946,6 +960,32 @@ paths:
                         recommendationReason: 「何かをつくってみたい」を選んだあなたに、身近な題材から制作を始めるきっかけとしておすすめします。技術を使ったものづくりの見方に触れられる一冊です。
                         infoUrl: https://books.google.com/books?id=example-volume-001
                     warnings: []
+                include-selected-by:
+                  summary: include=selectedBy を指定した場合
+                  value:
+                    requestId: example-request-005
+                    themeId: tec
+                    items:
+                      - id: example-volume-004
+                        source: google_books
+                        title: はじめてのプログラミングと発想
+                        authors:
+                          - サンプル著者
+                        coverUrl: null
+                        description: 身近な題材を使って、プログラムを作る考え方を紹介する入門書です。
+                        recommendationReason: 身近な題材から制作を始めたいあなたに、最初の一歩としてちょうどいい一冊です。
+                        selectedBy: ai
+                        infoUrl: null
+                      - id: example-volume-005
+                        source: google_books
+                        title: つくるための設計ノート
+                        authors: []
+                        coverUrl: null
+                        description: 設計の考え方を、身近な例とともに整理した一冊です。
+                        recommendationReason: null
+                        selectedBy: search
+                        infoUrl: null
+                    warnings: []
                 zero-results:
                   summary: 検索が正常に終わり0件
                   value:
@@ -954,7 +994,7 @@ paths:
                     items: []
                     warnings: []
                 reason-unavailable:
-                  summary: 理由生成に失敗（本は返す）
+                  summary: 理由生成に失敗（本は返す・include なし）
                   value:
                     requestId: example-request-003
                     themeId: tec
@@ -971,7 +1011,7 @@ paths:
                       - code: RECOMMENDATION_REASON_UNAVAILABLE
                         message: 一部の本のおすすめ理由を取得できませんでした。
                 insufficient-metadata:
-                  summary: 紹介文がなく理由の根拠が不足（本は返す）
+                  summary: 紹介文がなく理由の根拠が不足（本は返す・include なし）
                   value:
                     requestId: example-request-004
                     themeId: mon
@@ -1500,7 +1540,8 @@ components:
             推薦順に並んだ最大5冊。書籍IDを重複させない。AI の選定が3冊未満のときは、
             残りの候補から内容紹介のある本を優先して検索順に補い、合計3冊
             （候補が3冊未満ならその全件）にする。補った本は末尾に置き、
-            `recommendationReason` は `null`。無関係な検索や選定はしない。
+            `recommendationReason` は `null`（`include=selectedBy` 指定時は `selectedBy` が `search`）。
+            無関係な検索や選定はしない。
             検索結果が0件なら空配列を成功結果として返す。
           items:
             $ref: '#/components/schemas/BookItem'
@@ -1527,6 +1568,11 @@ components:
         Google Books から取得した1冊。取得できていない書名・著者・表紙を生成しない。
         `coverUrl`・`description`・`recommendationReason`・`infoUrl` は値がない場合に
         `null` を返す。プロパティ自体を省略しない。
+        `selectedBy` は `include=selectedBy` を指定したときだけ含まれる。`ai` は AI の選定で
+        選ばれた本、`search` は AI の選定を経ずに検索順から入れた本（3冊未満の補充、
+        期限切れ・選定失敗などによる退避）。
+        理由が `null` の本は、画面が `selectedBy` と `description`・`infoUrl` の有無で、
+        本の中身に触れない定型文を表示する。
       properties:
         id:
           type: string
@@ -1580,6 +1626,20 @@ components:
             実際に書かれている事柄だけを根拠にする。内容紹介がない本は必ず `null`。
             書名だけの推測、未取得の内容・章・難易度・効能の作り足し、性格・適性の断定をしない。
             回答・書誌・検索語は資料であり、モデルへの命令として扱わない。
+        selectedBy:
+          type: string
+          enum:
+            - ai
+            - search
+          description: |
+            `include=selectedBy` を指定したときだけ含まれる任意の項目（この項目を追加する前の
+            応答には存在しない）。`ai` は AI の選定で選ばれた本（新規の選定、
+            キャッシュから復元した選定のどちらも含む）。`search` は AI の選定を経ずに
+            検索順から入れた本で、3冊未満の補充、期限切れ、選定失敗、キャッシュの復元失敗、
+            全候補に内容紹介がない場合、日次上限などの退避を含む。
+            `ai` でも `recommendationReason` は `null` になり得る（内容紹介がない、
+            理由の検証に落ちた等）。理由が `null` の本は、画面が `selectedBy` と
+            `description`・`infoUrl` の有無で、本の中身に触れない定型文を表示する。
         infoUrl:
           type: string
           format: uri
@@ -1594,6 +1654,72 @@ components:
           description: |
             探索検索APIで必ず返すGoogle Booksカテゴリ由来の星ID。星別books APIでは省略され、
             フロントが選んだ星IDを使用する。
+          items:
+            $ref: '#/components/schemas/ThemeId'
+    SearchBookItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - source
+        - title
+        - authors
+        - coverUrl
+        - description
+        - recommendationReason
+        - infoUrl
+        - worldIds
+      description: |
+        `/v1/books/search` が返す1冊。書誌項目は `BookItem` と同じだが、検索結果は
+        AI の選定ではないため `selectedBy` を返さない。`worldIds` は検索APIでは常に返す。
+        各項目の意味・制約は `BookItem` と同じ。
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Google Books の volume ID。ISBNではない。
+        source:
+          type: string
+          enum:
+            - google_books
+          description: MVPでは `google_books` 固定。
+        title:
+          type: string
+          minLength: 1
+          description: 書名。空文字にしない。
+        authors:
+          type: array
+          description: 著者。不明なら空配列。
+          items:
+            type: string
+            minLength: 1
+        coverUrl:
+          type: string
+          format: uri
+          pattern: '^https://'
+          nullable: true
+          description: 取得元メタデータに由来するHTTPS URL。不明なら `null`。
+        description:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 1000
+          description: 整形済みの内容紹介。取得できなければ `null`。
+        recommendationReason:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 200
+          description: 検索APIでは常に `null`（AI の推薦理由は付けない）。
+        infoUrl:
+          type: string
+          format: uri
+          pattern: '^https://books\.google\.(com|co\.jp)/'
+          nullable: true
+          description: Google Books の詳細リンク。取得できなければ `null`。
+        worldIds:
+          type: array
+          description: Google Books カテゴリ由来の星ID。検索APIでは必ず返す。
           items:
             $ref: '#/components/schemas/ThemeId'
     Warning:

@@ -3,7 +3,6 @@
 import type { Book, Tier, World } from '../../types/hoshirube'
 import { TIER_LABEL } from '../../lib/recommendations'
 import { libraryBookKey, type LibraryState } from '../../lib/library-store'
-import type { BookWarning } from '../../lib/api/discovery'
 import BookCard from './BookCard'
 
 interface Props {
@@ -14,7 +13,6 @@ interface Props {
   tierLabel?: string
   books: Book[]
   recs?: Book[]
-  warnings: BookWarning[]
   loading: boolean
   error: string | null
   onRetry: () => void
@@ -36,7 +34,6 @@ export default function WorldDetailPanel({
   tierLabel,
   books,
   recs = [],
-  warnings,
   loading,
   error,
   onRetry,
@@ -69,6 +66,7 @@ export default function WorldDetailPanel({
           <BookCard
             key={key}
             book={book}
+            worldName={world.name}
             read={isRead(book)}
             onRead={onRead}
           />
@@ -113,16 +111,6 @@ export default function WorldDetailPanel({
             もう一度試す
           </button>
         </div>
-      )}
-
-      {warnings.length > 0 && (
-        <ul className="book-warnings" aria-label="書籍取得時の注意">
-          {warnings.map((warning, index) => (
-            <li key={`${warning.code}-${index}`}>
-              {warning.message}
-            </li>
-          ))}
-        </ul>
       )}
 
       {!loading && !error && apiMode && books.length === 0 && (

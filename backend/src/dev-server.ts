@@ -44,6 +44,12 @@ const server = createServer(async (request, response) => {
 
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? '127.0.0.1'}`);
   const body = await readBody(request);
+  // API Gateway と同じく、同名のクエリパラメータは受信順にカンマで連結する。
+  const queryStringParameters: Record<string, string> = {};
+  for (const [key, value] of url.searchParams) {
+    const previous = queryStringParameters[key];
+    queryStringParameters[key] = previous === undefined ? value : `${previous},${value}`;
+  }
 
   const event: APIGatewayProxyEventV2 = {
     version: '2.0',
@@ -71,7 +77,7 @@ const server = createServer(async (request, response) => {
     },
     body: body === '' ? undefined : body,
     isBase64Encoded: false,
-    queryStringParameters: Object.fromEntries(url.searchParams.entries()),
+    queryStringParameters,
   };
 
   try {

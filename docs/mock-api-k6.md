@@ -43,7 +43,7 @@ npm run k6:load
 | `MOCK_API_DELAY_MS` | `0` | 各API応答に足す待ち時間（画面のloading確認用） |
 | `BASE_URL` | `http://127.0.0.1:8787` | k6の接続先 |
 
-書籍APIに `q=__empty__` を渡すと0件、`q=__warning__` を渡すと部分警告を返します。これらはUI状態を手動確認するためのテスト用検索語です。
+書籍APIに `q=__empty__` を渡すと0件、`q=__warning__` を渡すと部分警告を返します。`__empty__` はUI状態を手動確認するためのテスト用検索語、`__warning__` はAPIが警告（warnings）を返すことを確認するためのテスト用検索語です。
 
 ## 検証範囲
 

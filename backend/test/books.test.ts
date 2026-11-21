@@ -32,6 +32,7 @@ import {
   hangingBedrock,
   hangingGoogleBooks,
   googleBooksStub,
+  makeEvent,
   parseJson,
   usageStub,
   V1_NONE,
@@ -55,6 +56,7 @@ interface BookBody {
   coverUrl: string | null;
   description: string | null;
   recommendationReason: string | null;
+  selectedBy?: 'ai' | 'search';
   infoUrl: string | null;
 }
 
@@ -149,12 +151,102 @@ describe('GET /v1/themes/{themeId}/books', () => {
       title: '書籍vol-1',
       authors: [],
       recommendationReason: '何かをつくる興味に合う一冊です。',
+      selectedBy: 'ai',
       coverUrl: null,
       infoUrl: null,
     });
     expect(body.warnings).toEqual([]);
     expect(harness.googleBooks.queries).toEqual(['プログラミング 入門']);
     expect(harness.bedrock.calls).toHaveLength(1);
+  });
+
+  describe('include による selectedBy のオプトイン', () => {
+    it('include がない応答には、AI 選定・補充・退避のどの経路でも selectedBy キーを含めない', async () => {
+      const aiAndFill = createHarness({
+        googleBooks: googleBooksStub(() => defaultVolumes(4)),
+        bedrock: bedrockStub(() =>
+          recommendationsJson([{ id: 'vol-2', reason: '二冊目の理由です。' }]),
+        ),
+      });
+      const filled = parseJson<BooksResponseBody>(
+        (await aiAndFill.handler(booksEvent({ include: null }))).body,
+      );
+      expect(filled.items.map((item) => item.id)).toEqual(['vol-2', 'vol-1', 'vol-3']);
+      expect(filled.items.every((item) => !Object.hasOwn(item, 'selectedBy'))).toBe(true);
+
+      const fallback = createHarness({
+        googleBooks: googleBooksStub(() => defaultVolumes(2)),
+        bedrock: bedrockStub(() => {
+          const error = new Error('throttled');
+          error.name = 'ThrottlingException';
+          throw error;
+        }),
+      });
+      const retreated = parseJson<BooksResponseBody>(
+        (await fallback.handler(booksEvent({ include: null }))).body,
+      );
+      expect(retreated.items).toHaveLength(2);
+      expect(retreated.items.every((item) => !Object.hasOwn(item, 'selectedBy'))).toBe(true);
+
+      const noDescriptions = createHarness({
+        googleBooks: googleBooksStub(() => [
+          volume('a', { description: null }),
+          volume('b', { description: null }),
+        ]),
+      });
+      const metadataOnly = parseJson<BooksResponseBody>(
+        (await noDescriptions.handler(booksEvent({ include: null }))).body,
+      );
+      expect(metadataOnly.items).toHaveLength(2);
+      expect(metadataOnly.items.every((item) => !Object.hasOwn(item, 'selectedBy'))).toBe(true);
+    });
+
+    it('include のトークンは trim 後の完全一致で判定する', async () => {
+      const cases = [
+        { include: 'foo,selectedBy', included: true },
+        { include: ' selectedBy ', included: true },
+        { include: 'foo', included: false },
+        { include: 'selectedByX', included: false },
+        { include: '', included: false },
+        { include: 'select', included: false },
+        // 200文字ちょうど（189 + ',' + 'selectedBy'）は含める。
+        { include: `${'x'.repeat(189)},selectedBy`, included: true },
+        // 201文字は全体を無視する。
+        { include: `${'x'.repeat(190)},selectedBy`, included: false },
+        { include: `${'x'.repeat(189)},selectedByX`, included: false },
+      ];
+      for (const testCase of cases) {
+        const harness = createHarness({
+          googleBooks: googleBooksStub(() => defaultVolumes(1)),
+          bedrock: bedrockStub(() =>
+            recommendationsJson([{ id: 'vol-1', reason: '理由です。' }]),
+          ),
+        });
+        const body = parseJson<BooksResponseBody>(
+          (await harness.handler(booksEvent({ include: testCase.include }))).body,
+        );
+        expect(body.items.length, `include=${JSON.stringify(testCase.include)}`).toBeGreaterThan(0);
+        expect(
+          body.items.every((item) => Object.hasOwn(item, 'selectedBy') === testCase.included),
+          `include=${JSON.stringify(testCase.include)}`,
+        ).toBe(true);
+      }
+    });
+
+    it('include=selectedBy なら AI は ai、補充は search を返す', async () => {
+      const harness = createHarness({
+        googleBooks: googleBooksStub(() => defaultVolumes(3)),
+        bedrock: bedrockStub(() =>
+          recommendationsJson([{ id: 'vol-2', reason: '二冊目の理由です。' }]),
+        ),
+      });
+
+      const body = parseJson<BooksResponseBody>(
+        (await harness.handler(booksEvent({ include: 'selectedBy' }))).body,
+      );
+
+      expect(body.items.map((item) => item.selectedBy)).toEqual(['ai', 'search', 'search']);
+    });
   });
 
   it('未知の themeId は 422 UNKNOWN_THEME_ID', async () => {
@@ -396,6 +488,7 @@ describe('GET /v1/themes/{themeId}/books', () => {
     expect(response.statusCode).toBe(200);
     const body = parseJson<BooksResponseBody>(response.body);
     expect(body.items.map((item) => item.recommendationReason)).toEqual([null, null]);
+    expect(body.items.map((item) => item.selectedBy)).toEqual(['search', 'search']);
     expect(body.warnings.map((warning) => warning.code)).toEqual([
       'INSUFFICIENT_BOOK_METADATA',
     ]);
@@ -417,6 +510,7 @@ describe('GET /v1/themes/{themeId}/books', () => {
     const body = parseJson<BooksResponseBody>(response.body);
     expect(body.items).toHaveLength(2);
     expect(body.items.every((item) => item.recommendationReason === null)).toBe(true);
+    expect(body.items.every((item) => item.selectedBy === 'search')).toBe(true);
     expect(body.warnings.map((warning) => warning.code)).toEqual([
       'RECOMMENDATION_REASON_UNAVAILABLE',
     ]);
@@ -2200,6 +2294,7 @@ describe('books の日次外部呼び出し上限', () => {
     expect(response.statusCode).toBe(200);
     const body = parseJson<BooksResponseBody>(response.body);
     expect(body.items[0]?.recommendationReason).toBeNull();
+    expect(body.items.map((item) => item.selectedBy)).toEqual(['search']);
     expect(body.warnings.map((warning) => warning.code)).toEqual([
       'RECOMMENDATION_REASON_UNAVAILABLE',
     ]);
@@ -3141,6 +3236,7 @@ describe('おすすめ冊数の下限', () => {
       ...describedBook(id, description),
       source: 'google_books',
       recommendationReason: null,
+      selectedBy: 'ai',
     }));
   }
 
@@ -3149,24 +3245,24 @@ describe('おすすめ冊数の下限', () => {
   });
 
   describe('fillToMinimum', () => {
-    it('3冊以上ならそのまま返し、filledIds は空', () => {
+    it('3冊以上ならそのまま返し、補充しない', () => {
       const items = bookItems(['a', 'b', 'c']);
       const candidates = ['a', 'b', 'c', 'd'].map((id) => describedBook(id));
 
       const result = fillToMinimum(items, candidates);
 
-      expect(result.items.map((item) => item.id)).toEqual(['a', 'b', 'c']);
-      expect(result.filledIds.size).toBe(0);
+      expect(result.map((item) => item.id)).toEqual(['a', 'b', 'c']);
+      expect(result.map((item) => item.selectedBy)).toEqual(['ai', 'ai', 'ai']);
     });
 
-    it('0冊なら内容紹介のある候補を検索順に3冊補い、理由は null', () => {
+    it('0冊なら内容紹介のある候補を検索順に3冊補い、理由は null・selectedBy は search', () => {
       const candidates = ['a', 'b', 'c', 'd'].map((id) => describedBook(id));
 
       const result = fillToMinimum([], candidates);
 
-      expect(result.items.map((item) => item.id)).toEqual(['a', 'b', 'c']);
-      expect(result.items.map((item) => item.recommendationReason)).toEqual([null, null, null]);
-      expect([...result.filledIds]).toEqual(['a', 'b', 'c']);
+      expect(result.map((item) => item.id)).toEqual(['a', 'b', 'c']);
+      expect(result.map((item) => item.recommendationReason)).toEqual([null, null, null]);
+      expect(result.map((item) => item.selectedBy)).toEqual(['search', 'search', 'search']);
     });
 
     it('1冊なら AI の1冊を先頭に保ち、選ばれていない候補を検索順で2冊補う', () => {
@@ -3176,18 +3272,19 @@ describe('おすすめ冊数の下限', () => {
           ...describedBook('b'),
           source: 'google_books',
           recommendationReason: 'AI が選んだ理由です。',
+          selectedBy: 'ai',
         },
       ];
 
       const result = fillToMinimum(items, candidates);
 
-      expect(result.items.map((item) => item.id)).toEqual(['b', 'a', 'c']);
-      expect(result.items.map((item) => item.recommendationReason)).toEqual([
+      expect(result.map((item) => item.id)).toEqual(['b', 'a', 'c']);
+      expect(result.map((item) => item.recommendationReason)).toEqual([
         'AI が選んだ理由です。',
         null,
         null,
       ]);
-      expect([...result.filledIds]).toEqual(['a', 'c']);
+      expect(result.map((item) => item.selectedBy)).toEqual(['ai', 'search', 'search']);
     });
 
     it('検索順が前でも内容紹介のない候補より、後ろの内容紹介のある候補を優先する', () => {
@@ -3200,8 +3297,8 @@ describe('おすすめ冊数の下限', () => {
       const result = fillToMinimum([], candidates);
 
       // 内容紹介ありの c を先に補い、足りない2冊を検索順の a・b で補う。
-      expect(result.items.map((item) => item.id)).toEqual(['c', 'a', 'b']);
-      expect([...result.filledIds]).toEqual(['c', 'a', 'b']);
+      expect(result.map((item) => item.id)).toEqual(['c', 'a', 'b']);
+      expect(result.map((item) => item.selectedBy)).toEqual(['search', 'search', 'search']);
     });
 
     it('候補が2冊しかなければ2冊までしか補わない', () => {
@@ -3209,12 +3306,33 @@ describe('おすすめ冊数の下限', () => {
 
       const result = fillToMinimum([], candidates);
 
-      expect(result.items.map((item) => item.id)).toEqual(['a', 'b']);
-      expect(result.filledIds.size).toBe(2);
+      expect(result.map((item) => item.id)).toEqual(['a', 'b']);
+      expect(result).toHaveLength(2);
+      expect(result.map((item) => item.selectedBy)).toEqual(['search', 'search']);
     });
   });
 
   describe('handleBooks', () => {
+    it('AI が3冊以上選んだら、すべて selectedBy は ai', async () => {
+      const harness = createHarness({
+        googleBooks: googleBooksStub(() => defaultVolumes(4)),
+        bedrock: bedrockStub(() =>
+          recommendationsJson([
+            { id: 'vol-1', reason: '一冊目の理由です。' },
+            { id: 'vol-2', reason: '二冊目の理由です。' },
+            { id: 'vol-3', reason: '三冊目の理由です。' },
+          ]),
+        ),
+      });
+
+      const response = await harness.handler(booksEvent());
+      const body = parseJson<BooksResponseBody>(response.body);
+
+      expect(body.items.map((item) => item.id)).toEqual(['vol-1', 'vol-2', 'vol-3']);
+      expect(body.items.map((item) => item.selectedBy)).toEqual(['ai', 'ai', 'ai']);
+      expect(body.warnings).toEqual([]);
+    });
+
     it('AI が空配列を返しても、紹介文ありの候補3冊で補い、警告しない', async () => {
       const harness = createHarness({
         googleBooks: googleBooksStub(() => defaultVolumes(4)),
@@ -3226,6 +3344,7 @@ describe('おすすめ冊数の下限', () => {
 
       expect(body.items.map((item) => item.id)).toEqual(['vol-1', 'vol-2', 'vol-3']);
       expect(body.items.map((item) => item.recommendationReason)).toEqual([null, null, null]);
+      expect(body.items.map((item) => item.selectedBy)).toEqual(['search', 'search', 'search']);
       expect(body.warnings).toEqual([]);
     });
 
@@ -3246,6 +3365,7 @@ describe('おすすめ冊数の下限', () => {
         null,
         null,
       ]);
+      expect(body.items.map((item) => item.selectedBy)).toEqual(['ai', 'search', 'search']);
       expect(body.warnings).toEqual([]);
     });
 
@@ -3340,6 +3460,51 @@ describe('おすすめ冊数の下限', () => {
       const secondItems = parseJson<BooksResponseBody>(second.body).items;
       expect(firstReasons).toEqual(['二冊目の理由です。', null, null]);
       expect(secondItems.map((item) => item.recommendationReason)).toEqual(firstReasons);
+      // キャッシュ復元でも AI の1冊は ai、補充2冊は search。
+      expect(secondItems.map((item) => item.selectedBy)).toEqual(['ai', 'search', 'search']);
     });
+
+    it('キャッシュの復元に失敗したら検索順へ退避し、全件 selectedBy は search', async () => {
+      const harness = createHarness({
+        googleBooks: googleBooksStub(() => defaultVolumes(3)),
+        recommendationCache: {
+          get: () => [{ id: 'missing-id', reason: '欠けた理由です。' }],
+          set: () => {},
+          size: 1,
+        },
+      });
+
+      const response = await harness.handler(booksEvent());
+      const body = parseJson<BooksResponseBody>(response.body);
+
+      expect(response.statusCode).toBe(200);
+      expect(body.items.map((item) => item.id)).toEqual(['vol-1', 'vol-2', 'vol-3']);
+      expect(body.items.map((item) => item.selectedBy)).toEqual(['search', 'search', 'search']);
+      expect(body.warnings.map((warning) => warning.code)).toEqual([
+        'RECOMMENDATION_REASON_UNAVAILABLE',
+      ]);
+      expect(harness.bedrock.calls).toHaveLength(0);
+    });
+  });
+});
+
+describe('GET /v1/books/search', () => {
+  it('応答の本には selectedBy を含めない', async () => {
+    const harness = createHarness({
+      googleBooks: googleBooksStub(() => defaultVolumes(2)),
+    });
+
+    const response = await harness.handler(
+      makeEvent({ method: 'GET', path: '/v1/books/search', query: { q: 'ものづくり' } }),
+    );
+
+    expect(response.statusCode).toBe(200);
+    const body = parseJson<{ requestId: string; items: Array<Record<string, unknown>> }>(
+      response.body,
+    );
+    expect(body.items).toHaveLength(2);
+    expect(body.items.every((item) => !Object.hasOwn(item, 'selectedBy'))).toBe(true);
+    expect(body.items.every((item) => Array.isArray(item.worldIds))).toBe(true);
+    expect(harness.googleBooks.queries).toEqual(['ものづくり']);
   });
 });

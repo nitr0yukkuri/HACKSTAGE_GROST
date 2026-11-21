@@ -61,8 +61,9 @@ let memorySession: DiscoverySession | null = null
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-const hasOnlyKeys = (value: Record<string, unknown>, keys: string[]): boolean =>
-  Object.keys(value).every((key) => keys.includes(key)) && keys.every((key) => Object.hasOwn(value, key))
+const hasOnlyKeys = (value: Record<string, unknown>, keys: string[], optionalKeys: string[] = []): boolean =>
+  Object.keys(value).every((key) => keys.includes(key) || optionalKeys.includes(key)) &&
+  keys.every((key) => Object.hasOwn(value, key))
 
 const nonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0
@@ -192,12 +193,13 @@ function parseBook(payload: unknown, themeId: string): BookRecommendation {
 
   const seenIds = new Set<string>()
   const items = payload.items.map((entry): Book => {
-    if (!isRecord(entry) || !hasOnlyKeys(entry, ['id', 'source', 'title', 'authors', 'coverUrl', 'description', 'recommendationReason', 'infoUrl']) ||
+    if (!isRecord(entry) || !hasOnlyKeys(entry, ['id', 'source', 'title', 'authors', 'coverUrl', 'description', 'recommendationReason', 'infoUrl'], ['selectedBy']) ||
         !nonEmptyString(entry.id) || entry.source !== 'google_books' ||
         !nonEmptyString(entry.title) || !Array.isArray(entry.authors) || !entry.authors.every(nonEmptyString) ||
         !(entry.coverUrl === null || typeof entry.coverUrl === 'string') ||
         !(entry.description === null || (nonEmptyString(entry.description) && Array.from(entry.description).length <= 1000)) ||
         !(entry.recommendationReason === null || (nonEmptyString(entry.recommendationReason) && Array.from(entry.recommendationReason).length <= 200)) ||
+        !(entry.selectedBy === undefined || entry.selectedBy === 'ai' || entry.selectedBy === 'search') ||
         !(entry.infoUrl === null || (typeof entry.infoUrl === 'string' && /^https:\/\/books\.google\.(com|co\.jp)\//.test(entry.infoUrl)))) {
       throw new DiscoveryApiError('書籍APIが契約と異なる書籍データを返しました。', 502, 'INVALID_API_RESPONSE')
     }
@@ -213,6 +215,7 @@ function parseBook(payload: unknown, themeId: string): BookRecommendation {
       coverUrl: normalizeBookCoverUrl(typeof entry.coverUrl === 'string' ? entry.coverUrl : null, 'google_books'),
       description: entry.description,
       recommendationReason: entry.recommendationReason,
+      ...(entry.selectedBy === 'ai' || entry.selectedBy === 'search' ? { selectedBy: entry.selectedBy } : {}),
       infoUrl: entry.infoUrl,
       worldIds: [themeId],
     }
@@ -238,7 +241,7 @@ export async function getThemeBooks(themeId: string, searchQuery: string, contex
   if (!searchQuery.trim() || Array.from(searchQuery.trim()).length > 128 || searchQuery !== searchQuery.trim()) {
     throw new DiscoveryApiError('書籍検索語を確認してください。', 422, 'INVALID_SEARCH_QUERY')
   }
-  const params = new URLSearchParams({ q: searchQuery })
+  const params = new URLSearchParams({ q: searchQuery, include: 'selectedBy' })
   const contextHeader = JSON.stringify(context)
   if (new TextEncoder().encode(contextHeader).byteLength > 4096) {
     throw new DiscoveryApiError('回答データが送信上限を超えています。', 431, 'CONTEXT_TOO_LARGE')

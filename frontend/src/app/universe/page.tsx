@@ -416,7 +416,6 @@ function Universe() {
           <WorldDetailPanel world={world} root={root} kids={kids} tier={tiers[world.id]}
             tierLabel={apiConfigured ? ['三等星 · これから探索', '二等星 · おすすめ候補', '一等星 · おすすめ上位'][tiers[world.id]] : undefined}
             books={apiConfigured ? (bookResult?.themeId === world.id ? bookResult.items : []) : booksForWorld(world.id)}
-            warnings={apiConfigured && bookResult?.themeId === world.id ? bookResult.warnings : []}
             loading={apiConfigured && bookLoading} error={apiConfigured ? bookError : null}
             onRetry={() => setBookRetry((count) => count + 1)} apiMode={apiConfigured} library={library} open={panelOpen}
               readIds={readIds}
