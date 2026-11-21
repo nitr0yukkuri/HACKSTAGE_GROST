@@ -1,5 +1,6 @@
 import { WORLDS } from '../../data/worlds'
 import { encodeAnswers } from '../recommendations'
+import { normalizeBookCoverUrl } from '../book-covers'
 import type { Book, OnboardingAnswers } from '../../types/hoshirube'
 
 export interface DiscoveryAnswer {
@@ -194,7 +195,7 @@ function parseBook(payload: unknown, themeId: string): BookRecommendation {
     if (!isRecord(entry) || !hasOnlyKeys(entry, ['id', 'source', 'title', 'authors', 'coverUrl', 'description', 'recommendationReason', 'infoUrl']) ||
         !nonEmptyString(entry.id) || entry.source !== 'google_books' ||
         !nonEmptyString(entry.title) || !Array.isArray(entry.authors) || !entry.authors.every(nonEmptyString) ||
-        !(entry.coverUrl === null || (typeof entry.coverUrl === 'string' && entry.coverUrl.startsWith('https://'))) ||
+        !(entry.coverUrl === null || typeof entry.coverUrl === 'string') ||
         !(entry.description === null || (nonEmptyString(entry.description) && Array.from(entry.description).length <= 1000)) ||
         !(entry.recommendationReason === null || (nonEmptyString(entry.recommendationReason) && Array.from(entry.recommendationReason).length <= 200)) ||
         !(entry.infoUrl === null || (typeof entry.infoUrl === 'string' && /^https:\/\/books\.google\.(com|co\.jp)\//.test(entry.infoUrl)))) {
@@ -209,7 +210,7 @@ function parseBook(payload: unknown, themeId: string): BookRecommendation {
       source: 'google_books',
       title: entry.title,
       authors: entry.authors,
-      coverUrl: entry.coverUrl,
+      coverUrl: normalizeBookCoverUrl(typeof entry.coverUrl === 'string' ? entry.coverUrl : null, 'google_books'),
       description: entry.description,
       recommendationReason: entry.recommendationReason,
       infoUrl: entry.infoUrl,

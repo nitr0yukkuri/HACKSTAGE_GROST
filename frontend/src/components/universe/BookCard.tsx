@@ -1,5 +1,5 @@
-import type { CSSProperties } from 'react'
 import type { Book } from '../../types/hoshirube'
+import BookCover from '../common/BookCover'
 
 interface Props {
   book: Book
@@ -20,24 +20,9 @@ export default function BookCard({
   onExplore,
   exploreLabel,
 }: Props) {
-  const hue = (book.title.charCodeAt(0) * 37) % 360
-
   return (
     <li className="panel-book-item">
-      {book.coverUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={book.coverUrl}
-          alt=""
-          width={42}
-          height={58}
-          style={{ flex: 'none', borderRadius: 4 }}
-        />
-      ) : (
-        <i style={{ '--h': hue } as CSSProperties}>
-          {book.title[0]}
-        </i>
-      )}
+      <BookCover book={book} size="discovery" />
 
       <div className="panel-book-content">
         <div className="panel-book-meta">

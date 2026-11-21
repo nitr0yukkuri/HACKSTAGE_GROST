@@ -1,4 +1,5 @@
 import { BOOKS } from '../data/books'
+import { normalizeBookCoverUrl } from './book-covers'
 import type { Book } from '../types/hoshirube'
 
 export type ReadingStatus = 'to_read' | 'read'
@@ -33,7 +34,7 @@ function parseBook(value: unknown): Book | null {
   if (!isRecord(value) || !nonEmptyString(value.id) || !nonEmptyString(value.title) ||
       (value.source !== 'google_books' && value.source !== 'local_demo') ||
       !Array.isArray(value.authors) || !value.authors.every((author) => typeof author === 'string') ||
-      !(value.coverUrl === null || (typeof value.coverUrl === 'string' && value.coverUrl.startsWith('https://'))) ||
+      !(value.coverUrl === null || typeof value.coverUrl === 'string') ||
       !(value.description === null || typeof value.description === 'string') ||
       !(value.recommendationReason === null || typeof value.recommendationReason === 'string') ||
       !(value.infoUrl === null || (typeof value.infoUrl === 'string' && /^https:\/\/books\.google\.(com|co\.jp)\//.test(value.infoUrl))) ||
@@ -44,7 +45,7 @@ function parseBook(value: unknown): Book | null {
     source: value.source,
     title: value.title,
     authors: value.authors,
-    coverUrl: value.coverUrl,
+    coverUrl: normalizeBookCoverUrl(typeof value.coverUrl === 'string' ? value.coverUrl : null, value.source),
     description: value.description,
     recommendationReason: value.recommendationReason,
     infoUrl: value.infoUrl,
@@ -59,7 +60,13 @@ function parseLibrary(value: unknown): LibraryState {
   for (const [key, raw] of Object.entries(value)) {
     if (!isRecord(raw) || (raw.status !== 'to_read' && raw.status !== 'read') ||
         typeof raw.savedAt !== 'number' || !Number.isFinite(raw.savedAt)) continue
-    const book = parseBook(raw.book)
+    const parsedBook = parseBook(raw.book)
+    const currentDemoBook = parsedBook?.source === 'local_demo'
+      ? BOOKS.find((candidate) => candidate.source === 'local_demo' && candidate.id === parsedBook.id)
+      : undefined
+    const book = parsedBook && currentDemoBook
+      ? { ...parsedBook, coverUrl: currentDemoBook.coverUrl }
+      : parsedBook
     if (!book || libraryBookKey(book) !== key) continue
     entries[key] = { status: raw.status, savedAt: raw.savedAt, book }
   }
