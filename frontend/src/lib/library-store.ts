@@ -115,13 +115,13 @@ function persistLibrary(next: LibraryState): void {
   window.dispatchEvent(new Event(LIBRARY_CHANGE_EVENT))
 }
 
-export function saveBook(book: Book, themeId: string): void {
+export function saveBook(book: Book, themeId?: string): void {
   const key = libraryBookKey(book)
   const current = loadLibrary()
   const previous = current[key]
   const savedBook: Book = {
     ...book,
-    worldIds: [...new Set([...(previous?.book.worldIds ?? []), ...book.worldIds, themeId])],
+    worldIds: [...new Set([...(previous?.book.worldIds ?? []), ...book.worldIds, ...(themeId ? [themeId] : [])])],
   }
   persistLibrary({
     ...current,
