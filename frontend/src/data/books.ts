@@ -1,13 +1,47 @@
 import { GENRE_SAMPLE_BOOKS } from './genre-sample-books'
 import type { Book } from '../types/hoshirube'
 
-// ローカルデモ用の固定データ。API応答と同じ表示形式へ変換している。
+type DemoCover = { googleBooksId: string } | { imageUrl: string }
+
+const DEMO_COVERS: Record<string, DemoCover> = {
+  philosophy: { googleBooksId: 'a-FQAAAACAAJ' },
+  guns: { googleBooksId: '0jJvJgAACAAJ' },
+  thinking: { googleBooksId: 'tNDza_Pb0UMC' },
+  cosmos: { googleBooksId: '9KVaAAAAYAAJ' },
+  code: { googleBooksId: '-9ajDwAAQBAJ' },
+  idea: { googleBooksId: 'EQBbxugrFvsC' },
+  artstory: { googleBooksId: 'vLNozQEACAAJ' },
+  language: { googleBooksId: 'dTUlkgAACAAJ' },
+  kokoro: { googleBooksId: 'D80qPwAACAAJ' },
+  sophie: { imageUrl: 'https://nhkbook.s3-ap-northeast-1.amazonaws.com/image/goods/000000802231995/000000802231995_01_580.jpg' },
+  ennui: { imageUrl: 'https://www.shinchosha.co.jp/images_v2/book/cover/103541/103541_xl.jpg' },
+  sapiens: { googleBooksId: '9r8_DwAAQBAJ' },
+  factfulness: { googleBooksId: 'POijDwAAQBAJ' },
+  universe: { imageUrl: 'https://dvs-cover.kodansha.co.jp/0000194760/LYGyW1RCYA0RkKJgsPEkdCW7xqpkiDYuJPX7jhVn.jpg' },
+  pragmatic: { googleBooksId: 'B5IIEAAAQBAJ' },
+  readable: { imageUrl: 'https://www.oreilly.co.jp/books/images/picture_large978-4-87311-565-8.jpeg' },
+  crypto: { googleBooksId: 'VQeGCgAAQBAJ' },
+  engineer: { imageUrl: 'https://b-bunshun.ismcdn.jp/mwimgs/c/3/350/img_c375298c559c9d9254d330c01c66f3921311938.jpg' },
+  design: { imageUrl: 'https://img.hanmoto.com/bd/img/9784788514348.jpg?lastupdated=2015-12-10T16%3A12%3A26%2B09%3A00' },
+  art: { imageUrl: 'https://www.kawade.co.jp/img/cover_l/9784309256283.jpg' },
+  lang: { imageUrl: 'https://www.hayakawa-online.co.jp/img/goods/L/613930.jpg' },
+  ginga: { imageUrl: 'https://www.shinchosha.co.jp/images_v2/book/cover/109205/109205_xl.jpg' },
+}
+
+const demoCoverUrl = (cover: DemoCover | undefined): string | null => {
+  if (!cover) return null
+  return 'googleBooksId' in cover
+    ? 'https://books.google.com/books/content?id=' + encodeURIComponent(cover.googleBooksId) + '&printsec=frontcover&img=1&zoom=2&source=gbs_api'
+    : cover.imageUrl
+}
+
+// ローカルデモ用の固定データ。実在する書籍の表紙画像を表示する。
 const demoBook = (id: string, title: string, author: string, description: string, worldIds: string[]): Book => ({
   id,
   source: 'local_demo',
   title,
   authors: author ? [author] : [],
-  coverUrl: null,
+  coverUrl: demoCoverUrl(DEMO_COVERS[id]),
   description,
   recommendationReason: null,
   infoUrl: null,

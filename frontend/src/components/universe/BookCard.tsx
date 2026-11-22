@@ -1,10 +1,10 @@
-import type { CSSProperties } from 'react'
 import type { Book } from '../../types/hoshirube'
+import { fallbackReason } from '../../lib/book-fallback'
+import BookCover from '../common/BookCover'
 
 interface Props {
   book: Book
-  saved: boolean
-  onToggleSave: () => void
+  worldName?: string
   read?: boolean
   onRead?: (book: Book) => void
   onExplore?: () => void
@@ -13,31 +13,15 @@ interface Props {
 
 export default function BookCard({
   book,
-  saved,
-  onToggleSave,
+  worldName,
   read = false,
   onRead,
   onExplore,
   exploreLabel,
 }: Props) {
-  const hue = (book.title.charCodeAt(0) * 37) % 360
-
   return (
     <li className="panel-book-item">
-      {book.coverUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={book.coverUrl}
-          alt=""
-          width={42}
-          height={58}
-          style={{ flex: 'none', borderRadius: 4 }}
-        />
-      ) : (
-        <i style={{ '--h': hue } as CSSProperties}>
-          {book.title[0]}
-        </i>
-      )}
+      <BookCover book={book} size="discovery" />
 
       <div className="panel-book-content">
         <div className="panel-book-meta">
@@ -49,8 +33,7 @@ export default function BookCard({
           </small>
 
           <em>
-            {book.recommendationReason ??
-              'おすすめ理由はありません'}
+            {book.recommendationReason ?? fallbackReason(book, worldName)}
           </em>
 
           {book.description && (
@@ -72,20 +55,6 @@ export default function BookCard({
           )}
 
           <div className="book-actions">
-            <button
-              type="button"
-              className={`book-save${saved ? ' is-saved' : ''}`}
-              aria-pressed={saved}
-              aria-label={
-                saved
-                  ? `${book.title}の保存を解除`
-                  : `${book.title}を本棚に保存`
-              }
-              onClick={onToggleSave}
-            >
-              {saved ? '保存済み' : '本棚に保存'}
-            </button>
-
             {onRead && (
               <button
                 type="button"
@@ -98,7 +67,7 @@ export default function BookCard({
                 }
                 onClick={() => onRead(book)}
               >
-                {read ? '✓ 読了済み' : '📖 読んだ！'}
+                完読
               </button>
             )}
 

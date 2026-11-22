@@ -50,7 +50,7 @@ const seed = await seedRes.json();
 // seed.themes はおすすめ順。回答と seed を保存し、seed.themes[0] を初期選択にする
 
 const theme = seed.themes[0];
-const params = new URLSearchParams({ q: theme.searchQuery });
+const params = new URLSearchParams({ q: theme.searchQuery, include: 'selectedBy' });
 const booksRes = await fetch(
   `${base}/v1/themes/${encodeURIComponent(theme.themeId)}/books?${params}`,
   { headers: { 'X-Discovery-Context': context } },
@@ -68,10 +68,11 @@ const result = await booksRes.json();
 - 回答と seed 結果はブラウザに保存する。ログイン・Cookie・ユーザー DB・API キーの埋め込みは使わない。
 - 書籍の保存・読了記録・読了時の星座更新はフロントの担当。同じ本を複数の星で保存する場合は `(source, id)` を同一書籍のキーにし、発見した星 ID を重複なく保持する。
 - `authors` は配列で返る。既存の文字列型へ変換する場合は `join('、')` などを使い、空配列は「著者情報なし」と表示する。
-- `coverUrl`・`description`・`recommendationReason`・`infoUrl` は `null` になり得る。表紙なしの代替表示、理由なしの「おすすめ理由はありません」を用意し、本自体は表示する。
+- 星別の本を取得するときは、`q` に加えて `include=selectedBy` を付ける。`include=selectedBy` を指定したときだけ各本に `selectedBy`（`ai` または `search`）が返る（オプトイン）。指定しない・空・`selectedBy` を含まない場合は、この項目を追加する前と同じ形で返る。未知のトークンは無視される。オプトインなので、画面と API のリリース順・ロールバック順に制約はない（画面が先でも API が先でもよく、古い画面を開いたままでも本の一覧が契約エラーにならない）。
+- `coverUrl`・`description`・`recommendationReason`・`infoUrl` は `null` になり得る。表紙なしの代替表示を用意し、本自体は表示する。`recommendationReason` が `null` の本には、AI を使わない定型文を2文で表示する。1文目は `selectedBy` が `search` なら「{星の名前}の星に並ぶ一冊です。」、`ai` または項目なしなら「{星の名前}の星につながる一冊です。」（星の名前が渡されない場合は「この星に…」）。2文目は `description` があれば「気になったら、内容紹介をひらいてみてください。」、なければ `infoUrl` があれば「タイトルが気になったら、Google Books で中身をのぞいてみませんか？」、どちらもなければ「タイトルが気になったら、手に取ってみてください。」。本の内容には触れない。`selectedBy` は `ai`・`search` のどちらかで、画面は項目があってもなくても受け付ける。
 - `description`（内容紹介）と `recommendationReason`（おすすめ理由）は別の文章として保持し、カードでは理由、展開部分では内容紹介を表示する。`infoUrl` がある場合だけ「Google Books で詳しく見る」を表示する。
-- `warnings` があっても本は表示する。0 件は「別の星も探してみよう」と案内する。
-- `items` は回答意図に合う順（推薦順）で最大5冊。合う本が少なければ5冊未満になる。冊数が少ないこと自体は警告ではなく、無理に埋めない。フロントで検索順に並べ替えない。
+- `warnings` があっても本は表示する（画面は警告を表示せず、理由がない本は本の行の定型文で示す）。0 件は「別の星も探してみよう」と案内する。
+- `items` は AI が選んだ本を推薦順に先頭に置く。3冊に満たなければ、未選定の候補から内容紹介のある本を優先して（各組の中は検索順で）補い、末尾に置く（候補が3冊未満ならその全件）。AI の選定を使えないときは検索順で最大5冊を返す。冊数が少ないこと自体は警告ではない。フロントで検索順に並べ替えない。
 - seed の応答を待ってから星を表示し、フロントは 30 秒で待機を打ち切る。星を切り替えたら前のリクエストを中止するか古い応答を無視する。
 - API Gateway のスロットリングによる `429` は共通 JSON 形式でない場合がある。1日の外部呼び出し上限（全体または送信元ネットワーク別）による `429` は共通 JSON（`RATE_LIMITED`）で、JST の翌日まで回復しない。いずれも HTTP ステータスと `error.code` の両方で扱い、スロットリングは時間をおいて再試行、日次上限は再試行せず案内を出す、という扱いをフロント接続時の要件とする。現時点のフロント実装でこの分岐が完了していることは確認していない。カウンタ利用不可は `429` ではなく、seed の初回は `503 DISCOVERY_UNAVAILABLE`、books のキャッシュミスは `502 BOOKS_UPSTREAM_ERROR`、理由生成は `200` と警告になる。
 - 取得済み結果を画面内で再利用するときのキーは「質問票の版＋回答内容＋星 ID＋q」。回答が変わったら再利用しない。

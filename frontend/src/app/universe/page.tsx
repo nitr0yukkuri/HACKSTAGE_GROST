@@ -19,7 +19,7 @@ import {
 import useLibrary from '../../lib/useLibrary'
 import { getThemeBooks, isDiscoveryApiConfigured, isDiscoveryThemeSupported, loadDiscoverySession, type BookRecommendation, type DiscoverySession } from '../../lib/api/discovery'
 import { libraryBookKey } from '../../lib/library-store'
-import type { Book, OnboardingAnswers, Tier } from '../../types/hoshirube'
+import type { OnboardingAnswers, Tier } from '../../types/hoshirube'
 
 const HOME: ViewState = { x: 0, y: 0, z: 1 }
 const clamp = (value: number, limit = 1.3) => Math.min(limit, Math.max(-limit, value))
@@ -53,7 +53,7 @@ function Universe() {
     setAnswersReady(true)
     setDiscoveryReady(true)
   }, [apiConfigured])
-  const { entries: library, save: saveBook, remove: removeBook, setReadStatus } = useLibrary()
+  const { entries: library, save: saveBook, setReadStatus } = useLibrary()
   const baseScores = useMemo(() => calcScores(answers), [answers])
 
   const history = useMemo<ReadEntry[]>(
@@ -278,11 +278,6 @@ function Universe() {
   }, [answersReady, selectedId, panelOpen, focusWorld])
 
   const pick = (id: string) => { setPicked(id); setPanelOpen(true) }
-  const toggleSavedBook = (book: Book, themeId: string) => {
-    const key = libraryBookKey(book)
-    if (library[key]) removeBook(key)
-    else saveBook(book, themeId)
-  }
   const zoom = (f: number) => setTarget((t) => ({ ...t, z: Math.min(3, Math.max(0.6, t.z * f)) }))
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!answersReady) return
@@ -418,6 +413,8 @@ function Universe() {
     const onWheel = (event: WheelEvent) => {
       const panel = event.target instanceof Element ? event.target.closest<HTMLElement>('.panel') : null
       if (panel) {
+        if (window.innerWidth <= 760) return
+
         const canScrollUp = panel.scrollTop > 0
         const canScrollDown = panel.scrollTop + panel.clientHeight < panel.scrollHeight - 1
         if ((event.deltaY < 0 && canScrollUp) || (event.deltaY > 0 && canScrollDown)) return
@@ -474,9 +471,6 @@ function Universe() {
             </div>
           </div>
         ) : answersReady && discoveryReady ? <>
-          <div className={`api-mode-note${apiConfigured ? ' is-live' : ''}`} role="status">
-            {apiConfigured ? 'API接続モード' : 'ローカルデモ（API未接続）'}
-          </div>
           <UniverseCanvas
               worlds={visible}
               tiers={tiers}
@@ -494,19 +488,26 @@ function Universe() {
             <button aria-label="縮小" onClick={() => zoom(1 / 1.3)}>－</button>
             <button aria-label="中心に戻す" onClick={() => { if (window.innerWidth <= 760) focusWorld(selectedId, 1, panelOpen); else setTarget(HOME) }}>◎</button>
           </div>
-          <div className="lgd" role="list" aria-label="星の等級">
-            <div role="listitem" aria-label={`一等星：${apiConfigured ? 'おすすめ上位' : '興味が強い'}`}><s aria-hidden="true" />一等星</div>
-            <div role="listitem" aria-label={`二等星：${apiConfigured ? 'おすすめ候補' : '少し気になる'}`}><s className="b" aria-hidden="true" />二等星</div>
-            <div role="listitem" aria-label={`三等星：${apiConfigured ? 'これから探索' : 'まだ未知の領域'}`}><s className="c" aria-hidden="true" />三等星</div>
+          <div className="lgd" role="list" aria-label="星の等級と意味">
+            <div role="listitem" aria-label={`一等星：${apiConfigured ? 'おすすめ上位' : '興味が強い'}`}>
+              <span className="lgd__star lgd__star--first" aria-hidden="true" />
+              <span className="lgd__text"><strong>一等星</strong><small>{apiConfigured ? 'おすすめ上位' : '興味が強い'}</small></span>
+            </div>
+            <div role="listitem" aria-label={`二等星：${apiConfigured ? 'おすすめ候補' : '少し気になる'}`}>
+              <span className="lgd__star lgd__star--second" aria-hidden="true" />
+              <span className="lgd__text"><strong>二等星</strong><small>{apiConfigured ? 'おすすめ候補' : '少し気になる'}</small></span>
+            </div>
+            <div role="listitem" aria-label={`三等星：${apiConfigured ? 'これから探索' : 'まだ未知の領域'}`}>
+              <span className="lgd__star lgd__star--third" aria-hidden="true" />
+              <span className="lgd__text"><strong>三等星</strong><small>{apiConfigured ? 'これから探索' : 'まだ未知の領域'}</small></span>
+            </div>
           </div>
           <div className="hint">気になる星を選んで、その世界の本をのぞいてみよう</div>
           <WorldDetailPanel world={world} root={root} kids={kids} tier={tiers[world.id]}
-            tierLabel={apiConfigured ? ['これから探索', 'おすすめ候補', 'おすすめ上位'][tiers[world.id]] : undefined}
+            tierLabel={apiConfigured ? ['三等星 · これから探索', '二等星 · おすすめ候補', '一等星 · おすすめ上位'][tiers[world.id]] : undefined}
             books={discoverySearchEnabled ? (bookResult?.themeId === world.id ? bookResult.items : []) : booksForWorld(world.id)}
-            warnings={discoverySearchEnabled && bookResult?.themeId === world.id ? bookResult.warnings : []}
             loading={discoverySearchEnabled && bookLoading} error={discoverySearchEnabled ? bookError : null}
             onRetry={() => setBookRetry((count) => count + 1)} apiMode={discoverySearchEnabled} library={library} open={panelOpen}
-            onToggleSave={(book) => toggleSavedBook(book, world.id)}
               readIds={readIds}
               recs={discoverySearchEnabled ? [] : recs}
               onRead={(book) => {

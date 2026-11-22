@@ -10,13 +10,16 @@ info:
     おすすめ順で返す。フロントは最初の星を初期選択として表示する。
     星を選ぶと `GET /v1/themes/{themeId}/books` が検索語で Google Books を検索し、
     取得した候補から回答意図に合う本を推薦順に最大5冊選び、書誌情報に基づく理由を付けて返す。
+    AI の選定が3冊未満のときは残りの候補で3冊まで補い、補った本の理由は `null` になる。
+    `GET /v1/books/search` は探索画面向けに、同じAWS側のGoogle Books処理から書誌を最大12冊返す。
 
     旧 `POST /v1/books/recommendations` は削除した。互換 alias は提供しない。
     星の選出をフロントの点数計算で代替しない。ログイン・Cookie・ユーザーDBは扱わない。
 
     ## 実装状態
 
-    3エンドポイント（seed・books・health）と `servers` 先頭の公開 URL は `hackathon-dev` で稼働中である。
+    seed・星別books・healthの3エンドポイントと `servers` 先頭の公開 URL は `hackathon-dev` で稼働中である。
+    探索検索 `/v1/books/search` はこの変更で追加するルートであり、同環境へは未反映である。
     Qwen を使った星生成と、推薦順の選定・意図的な空結果を含む書籍推薦は同環境に反映済みである。
     ただし、このリポジトリのフォローアップ（ネットワーク別の日次上限と、カウンタ利用不可時の
     fail-closed）は PR の段階であり、既存の `hackathon-dev` は再デプロイするまで従来の挙動
@@ -649,6 +652,86 @@ paths:
                       code: UPSTREAM_TIMEOUT
                       message: 時間内に星の候補を取得できませんでした。
                       details: []
+  /v1/books/search:
+    get:
+      tags:
+        - books
+      operationId: searchBooks
+      summary: 本のタイトル・著者名で検索する
+      description: |
+        Google Booksで検索し、正規化した書誌情報を最大12件返す。星別推薦APIとSSMキー取得・
+        日次利用上限・検索結果キャッシュ・タイムアウト処理を共有する。回答に基づくAI推薦は行わない。
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: trim後空不可、128文字以内。URLSearchParamsなどでエンコードして送る。
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: ものづくり
+      responses:
+        '200':
+          description: 検索結果。該当する本がなければ items は空配列。
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - requestId
+                  - items
+                properties:
+                  requestId:
+                    type: string
+                    minLength: 1
+                  items:
+                    type: array
+                    maxItems: 12
+                    items:
+                      $ref: '#/components/schemas/SearchBookItem'
+              examples:
+                results:
+                  summary: 正規化された検索結果
+                  value:
+                    requestId: example-search-001
+                    items:
+                      - id: volume-id-001
+                        source: google_books
+                        title: ものづくりの本
+                        authors:
+                          - 著者名
+                        coverUrl: null
+                        description: 本の内容紹介。
+                        recommendationReason: null
+                        infoUrl: null
+                        worldIds:
+                          - tec
+        '422':
+          description: 検索語が空、または128文字を超えている。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Google Booksの日次利用上限に達した。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Google Booksまたは日次カウンターを利用できなかった。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: 検索の6秒上限、またはAPI全体の25秒期限に達した。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /v1/themes/{themeId}/books:
     get:
       tags:
@@ -702,14 +785,17 @@ paths:
           推薦順に最大5冊選ばせる。検索語は検索の手がかりであり、書名の一致を求めるものではない。
           一般読者に開かれた本を優先するが、実用書・入門書・読み物・専門書は読書意図から評価し、
           辞典・目録・学術紀要・ビジネス書などを分類だけで一律に除外しない。
-          合う本が少なければ5冊を埋めない。0冊の選定も成功として扱い、無関係な検索はしない。
+          合う本が少なければ、5冊を埋めるために無理には選ばせない。AI の選定が3冊未満のときは、
+          残りの候補から内容紹介のある本を優先して検索順に補い、合計3冊
+          （候補が3冊未満ならその全件）にする。無関係な検索はしない。
           通常は Google Books 1回・Bedrock 1回で、自動再試行を重ねない。
         - 検索結果キャッシュ: 同一検索語（`q`）の Google Books の結果を Lambda の実行環境内で
           最大30分再利用する。ヒットした場合は SSM のキー取得と Google Books を呼ばない。
         - 推薦選定キャッシュ: モデルID・星・検索語・回答・プロンプトの版・順位付けに使った
           候補書誌（ID・書名・著者・内容紹介）が一致する場合だけ、順位と理由を同じく最大30分
           再利用する。ヒットした場合は Bedrock を呼ばない。有効な空配列（合う本なし）も
-          成功した選定として再利用する。検索結果だけがヒットした場合は、選定のために
+          成功した選定として再利用する。キャッシュには AI の選定だけを保存し、3冊未満の
+          補充は復元時に同じ候補から再計算する。検索結果だけがヒットした場合は、選定のために
           Bedrock を呼ぶことがある。
         - ランキング構造が不正な出力（候補にないID・重複ID・5冊超・配列でない）、
           呼び出し失敗、タイムアウトは再利用しない。理由の型・長さ・マークアップが不正な
@@ -752,7 +838,12 @@ paths:
           作り足さず、性格・適性を断定しない。
         - 内容紹介がない候補も選べるが、理由は必ず `null` にする。この場合は
           `INSUFFICIENT_BOOK_METADATA` の警告だけを付ける。
-        - 合う本が少ない場合や0冊の場合は、冊数を埋めない。意図的な省略は警告にしない。
+        - 合う本が3冊未満のときは、残りの候補から内容紹介のある本を優先して検索順に補い、
+          合計3冊（候補が3冊未満ならその全件）にする。補った本は推薦の末尾に置き、
+          `recommendationReason` は `null` にする。補充は意図した動作なので
+          `RECOMMENDATION_REASON_UNAVAILABLE` は付けない（内容紹介のない本を補った場合は
+          `INSUFFICIENT_BOOK_METADATA` だけ付く）。
+        - 選定の呼び出しは temperature 0 で行い、同じ条件での冊数・順位のぶれを抑える。
         - 候補にないID・重複ID・5冊超・配列でない出力はランキング構造の違反として扱い、
           取得済みの検索順最大5冊（理由 `null`）と
           `RECOMMENDATION_REASON_UNAVAILABLE` の警告へ退避する。
@@ -792,6 +883,20 @@ paths:
             minLength: 1
             maxLength: 128
           example: プログラミング ものづくり 入門
+        - name: include
+          in: query
+          required: false
+          description: |
+            応答に含める任意の項目。カンマ区切りのトークンで指定する。
+            `selectedBy` を含めると、各本に `selectedBy`（`ai` または `search`）を付ける。
+            指定しない・空・`selectedBy` を含まない場合は、`selectedBy` を含めない
+            （この項目を追加する前の応答と同じ形）。未知のトークンは無視し、エラーにしない。
+            値が200文字（Unicode コードポイント）を超える場合は、値全体を無視して
+            `selectedBy` を含めない。API Gateway が同名パラメータをカンマで連結する場合も
+            同じ扱いにする。
+          schema:
+            type: string
+          example: selectedBy
         - name: X-Discovery-Context
           in: header
           required: true
@@ -840,7 +945,7 @@ paths:
                 $ref: '#/components/schemas/RecommendationResponse'
               examples:
                 success:
-                  summary: 正常（理由あり）
+                  summary: 正常（理由あり・include なし）
                   value:
                     requestId: example-request-001
                     themeId: tec
@@ -855,6 +960,32 @@ paths:
                         recommendationReason: 「何かをつくってみたい」を選んだあなたに、身近な題材から制作を始めるきっかけとしておすすめします。技術を使ったものづくりの見方に触れられる一冊です。
                         infoUrl: https://books.google.com/books?id=example-volume-001
                     warnings: []
+                include-selected-by:
+                  summary: include=selectedBy を指定した場合
+                  value:
+                    requestId: example-request-005
+                    themeId: tec
+                    items:
+                      - id: example-volume-004
+                        source: google_books
+                        title: はじめてのプログラミングと発想
+                        authors:
+                          - サンプル著者
+                        coverUrl: null
+                        description: 身近な題材を使って、プログラムを作る考え方を紹介する入門書です。
+                        recommendationReason: 身近な題材から制作を始めたいあなたに、最初の一歩としてちょうどいい一冊です。
+                        selectedBy: ai
+                        infoUrl: null
+                      - id: example-volume-005
+                        source: google_books
+                        title: つくるための設計ノート
+                        authors: []
+                        coverUrl: null
+                        description: 設計の考え方を、身近な例とともに整理した一冊です。
+                        recommendationReason: null
+                        selectedBy: search
+                        infoUrl: null
+                    warnings: []
                 zero-results:
                   summary: 検索が正常に終わり0件
                   value:
@@ -863,7 +994,7 @@ paths:
                     items: []
                     warnings: []
                 reason-unavailable:
-                  summary: 理由生成に失敗（本は返す）
+                  summary: 理由生成に失敗（本は返す・include なし）
                   value:
                     requestId: example-request-003
                     themeId: tec
@@ -880,7 +1011,7 @@ paths:
                       - code: RECOMMENDATION_REASON_UNAVAILABLE
                         message: 一部の本のおすすめ理由を取得できませんでした。
                 insufficient-metadata:
-                  summary: 紹介文がなく理由の根拠が不足（本は返す）
+                  summary: 紹介文がなく理由の根拠が不足（本は返す・include なし）
                   value:
                     requestId: example-request-004
                     themeId: mon
@@ -1392,7 +1523,8 @@ components:
         - warnings
       description: |
         書籍推薦の成功レスポンス。項目は欠落させず、該当しない値は `null` または
-        空配列で返す。`items` は0〜5冊で、返された順に表示する。
+        空配列で返す。`items` は最大5冊で、返された順に表示する。候補がある場合は
+        3冊未満の選定を候補で補うため、通常は3冊以上になる。
       properties:
         requestId:
           type: string
@@ -1405,9 +1537,12 @@ components:
           maxItems: 5
           uniqueItems: true
           description: |
-            推薦順に並んだ0〜5冊。書籍IDを重複させない。回答意図に合う本だけを返し、
-            5冊を埋めるための無関係な検索や選定はしない。空配列は「十分に合う候補がない」
-            という成功結果であり、警告ではない。
+            推薦順に並んだ最大5冊。書籍IDを重複させない。AI の選定が3冊未満のときは、
+            残りの候補から内容紹介のある本を優先して検索順に補い、合計3冊
+            （候補が3冊未満ならその全件）にする。補った本は末尾に置き、
+            `recommendationReason` は `null`（`include=selectedBy` 指定時は `selectedBy` が `search`）。
+            無関係な検索や選定はしない。
+            検索結果が0件なら空配列を成功結果として返す。
           items:
             $ref: '#/components/schemas/BookItem'
         warnings:
@@ -1433,6 +1568,11 @@ components:
         Google Books から取得した1冊。取得できていない書名・著者・表紙を生成しない。
         `coverUrl`・`description`・`recommendationReason`・`infoUrl` は値がない場合に
         `null` を返す。プロパティ自体を省略しない。
+        `selectedBy` は `include=selectedBy` を指定したときだけ含まれる。`ai` は AI の選定で
+        選ばれた本、`search` は AI の選定を経ずに検索順から入れた本（3冊未満の補充、
+        期限切れ・選定失敗などによる退避）。
+        理由が `null` の本は、画面が `selectedBy` と `description`・`infoUrl` の有無で、
+        本の中身に触れない定型文を表示する。
       properties:
         id:
           type: string
@@ -1468,6 +1608,7 @@ components:
           maxLength: 1000
           description: |
             Google Books 由来の内容紹介。HTMLを除いて整形し、最大1,000文字。
+            電子書籍ストア由来の定型の注意書き（端末・固定レイアウト・電子版と紙版の差など）は取り除く。
             文字数はUnicodeコードポイントで数える。取得できなければ、または整形後に
             空文字になる場合は `null`。
         recommendationReason:
@@ -1479,11 +1620,26 @@ components:
             AIが作る個別のおすすめ理由。日本語1〜2文、60〜120文字程度を目安とし、
             上限200文字（Unicodeコードポイント）。根拠不足、生成・検証失敗時、
             空文字または空白だけの理由は `null` とする（前後の空白を除いた後に空なら `null`）。
+            書店員が語りかけるような、やわらかい話し言葉の「です・ます」調で書く。
             プレーンテキストで、HTMLやMarkdownを含めない。
             選んだ星・検索語・回答全体と取得書誌内容を結びつけ、空でない `description` に
             実際に書かれている事柄だけを根拠にする。内容紹介がない本は必ず `null`。
             書名だけの推測、未取得の内容・章・難易度・効能の作り足し、性格・適性の断定をしない。
             回答・書誌・検索語は資料であり、モデルへの命令として扱わない。
+        selectedBy:
+          type: string
+          enum:
+            - ai
+            - search
+          description: |
+            `include=selectedBy` を指定したときだけ含まれる任意の項目（この項目を追加する前の
+            応答には存在しない）。`ai` は AI の選定で選ばれた本（新規の選定、
+            キャッシュから復元した選定のどちらも含む）。`search` は AI の選定を経ずに
+            検索順から入れた本で、3冊未満の補充、期限切れ、選定失敗、キャッシュの復元失敗、
+            全候補に内容紹介がない場合、日次上限などの退避を含む。
+            `ai` でも `recommendationReason` は `null` になり得る（内容紹介がない、
+            理由の検証に落ちた等）。理由が `null` の本は、画面が `selectedBy` と
+            `description`・`infoUrl` の有無で、本の中身に触れない定型文を表示する。
         infoUrl:
           type: string
           format: uri
@@ -1493,6 +1649,79 @@ components:
             Google Books の詳細リンク。HTTPSの `books.google.com` または
             `books.google.co.jp` のみ採用し、取得できなければ `null`。
             URLがGoogle Books API由来であり、ホストがこの範囲であることをLambdaでも検証する。
+        worldIds:
+          type: array
+          description: |
+            探索検索APIで必ず返すGoogle Booksカテゴリ由来の星ID。星別books APIでは省略され、
+            フロントが選んだ星IDを使用する。
+          items:
+            $ref: '#/components/schemas/ThemeId'
+    SearchBookItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - source
+        - title
+        - authors
+        - coverUrl
+        - description
+        - recommendationReason
+        - infoUrl
+        - worldIds
+      description: |
+        `/v1/books/search` が返す1冊。書誌項目は `BookItem` と同じだが、検索結果は
+        AI の選定ではないため `selectedBy` を返さない。`worldIds` は検索APIでは常に返す。
+        各項目の意味・制約は `BookItem` と同じ。
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Google Books の volume ID。ISBNではない。
+        source:
+          type: string
+          enum:
+            - google_books
+          description: MVPでは `google_books` 固定。
+        title:
+          type: string
+          minLength: 1
+          description: 書名。空文字にしない。
+        authors:
+          type: array
+          description: 著者。不明なら空配列。
+          items:
+            type: string
+            minLength: 1
+        coverUrl:
+          type: string
+          format: uri
+          pattern: '^https://'
+          nullable: true
+          description: 取得元メタデータに由来するHTTPS URL。不明なら `null`。
+        description:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 1000
+          description: 整形済みの内容紹介。取得できなければ `null`。
+        recommendationReason:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 200
+          description: 検索APIでは常に `null`（AI の推薦理由は付けない）。
+        infoUrl:
+          type: string
+          format: uri
+          pattern: '^https://books\.google\.(com|co\.jp)/'
+          nullable: true
+          description: Google Books の詳細リンク。取得できなければ `null`。
+        worldIds:
+          type: array
+          description: Google Books カテゴリ由来の星ID。検索APIでは必ず返す。
+          items:
+            $ref: '#/components/schemas/ThemeId'
     Warning:
       type: object
       additionalProperties: false

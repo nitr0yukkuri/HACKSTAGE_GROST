@@ -21,6 +21,7 @@ export interface Book {
   coverUrl: string | null
   description: string | null
   recommendationReason: string | null
+  selectedBy?: 'ai' | 'search'
   infoUrl: string | null
   worldIds: string[]
 }
