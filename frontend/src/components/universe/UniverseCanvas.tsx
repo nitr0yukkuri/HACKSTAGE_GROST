@@ -33,9 +33,9 @@ export default function UniverseCanvas(props: Props) {
   const syncSignature = useMemo(() => syncLinks.map((link) => `${link.from}>${link.to}`).join('|'), [syncLinks])
   const syncTargetIds = useMemo(() => new Set(syncLinks.map((link) => link.to)), [syncLinks])
   const labels = useRef<Record<string, HTMLButtonElement | null>>({})
-  const live = useRef(props)
+  const live = useRef({ ...props, syncTargetIds })
   const scheduleRender = useRef<() => void>(() => {})
-  live.current = props
+  live.current = { ...props, syncTargetIds }
   const [noGl, setNoGl] = useState(false)
   const [glError, setGlError] = useState<string | null>(null)
 
@@ -63,7 +63,7 @@ export default function UniverseCanvas(props: Props) {
       raf = 0
       raf = 0
       if (document.hidden || contextLost || disposed) return
-      const { worlds, tiers, completedWorldIds, suggestedIds, readingLinks, syncLinks, selectedId, target, panelOpen } = live.current
+      const { worlds, tiers, completedWorldIds, suggestedIds, readingLinks, syncLinks, syncTargetIds, selectedId, target, panelOpen } = live.current
       const dp = devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight
       const syncElapsed = syncAnimationStartedAt.current === null ? Number.POSITIVE_INFINITY : ms - syncAnimationStartedAt.current
       const syncProgress = Math.min(1, Math.max(0, syncElapsed / 1800))
@@ -141,6 +141,9 @@ export default function UniverseCanvas(props: Props) {
       readingLinks.forEach(({ from, to, reason }) => {
         seg(from, to, reason === 'shared-book' ? 0.65 : 0.35)
       })
+
+      // 全冊完読から次の星へ続く線を強調する。
+      syncLinks.forEach(({ from, to }) => seg(from, to, 0.5 + syncPulse * 0.45))
 
       renderer.draw(pts, ln, reducedMotion ? 0 : ms / 1000)
       if (!reducedMotion) raf = requestAnimationFrame(frame)
