@@ -9,7 +9,8 @@ import AppHeader from '../../components/common/AppHeader'
 import UniverseCanvas, { type ViewState } from '../../components/universe/UniverseCanvas'
 import WorldDetailPanel from '../../components/universe/WorldDetailPanel'
 import { WORLDS } from '../../data/worlds'
-import { booksForWorld, calcScores, decodeAnswers, emptyOnboardingAnswers, initialWorldId, loadOnboardingAnswers, tiersFor } from '../../lib/recommendations'
+import { booksForWorld, calcScores, decodeAnswers, emptyOnboardingAnswers, initialWorldId, loadOnboardingAnswers } from '../../lib/recommendations'
+import { STAR_TIERS, starTiersFor } from '../../lib/star-tiers'
 import { CONNECTIONS } from '../../data/connections'
 import {
   applyReadHistory,
@@ -20,7 +21,7 @@ import useLibrary from '../../lib/useLibrary'
 import { getThemeBooks, isDiscoveryApiConfigured, isDiscoveryThemeSupported, loadDiscoverySession, type BookRecommendation, type DiscoverySession } from '../../lib/api/discovery'
 import { libraryBookKey, loadLibrary } from '../../lib/library-store'
 import { completedWorldIdsFor, loadWorldBookLists, rememberWorldBooks, resetWorldBookListsFallback, WORLD_BOOK_LISTS_STORAGE_KEY, type WorldBookLists } from '../../lib/reading-progress'
-import type { OnboardingAnswers, Tier } from '../../types/hoshirube'
+import type { OnboardingAnswers } from '../../types/hoshirube'
 
 const HOME: ViewState = { x: 0, y: 0, z: 1 }
 const clamp = (value: number, limit = 1.3) => Math.min(limit, Math.max(-limit, value))
@@ -90,15 +91,6 @@ function Universe() {
     () => applyReadHistory(baseScores, history),
     [baseScores, history],
   )
-  const localTiers = useMemo(() => tiersFor(scores), [scores])
-  const tiers = useMemo(() => {
-    if (!apiConfigured || !discoverySession) return localTiers
-    const apiTiers: Record<string, Tier> = Object.fromEntries(WORLDS.map((item) => [item.id, 0]))
-    discoverySession.seed.themes.forEach((theme, index) => { apiTiers[theme.themeId] = index === 0 ? 2 : 1 })
-    WORLDS.filter((item) => item.parentId).forEach((item) => { apiTiers[item.id] = apiTiers[item.parentId!] })
-    return apiTiers
-  }, [apiConfigured, discoverySession, localTiers])
-
   const completedWorldIds = useMemo(
     () => completedWorldIdsFor(Object.fromEntries(WORLDS.map((candidate) => [
       candidate.id,
@@ -265,6 +257,11 @@ function Universe() {
         return [{ from: source.id, to: targetId }]
       })
   }, [apiConfigured, completedWorldIds, scores])
+
+  const tiers = useMemo(
+    () => starTiersFor(WORLDS, completedWorldIds, new Set(syncLinks.map((link) => link.to)), selectedId),
+    [completedWorldIds, syncLinks, selectedId],
+  )
 
   const nextWorldId = syncLinks.find((link) => link.from === world.id)?.to
   const nextWorld = WORLDS.find((candidate) => candidate.id === nextWorldId)
@@ -510,23 +507,22 @@ function Universe() {
             <button aria-label="中心に戻す" onClick={() => { if (window.innerWidth <= 760) focusWorld(selectedId, 1, panelOpen); else setTarget(HOME) }}>◎</button>
           </div>
           <div className="lgd" role="list" aria-label="星の等級と意味">
-            <div role="listitem" aria-label={`一等星：${apiConfigured ? 'おすすめ上位' : '興味が強い'}`}>
+            <div role="listitem" aria-label={`${STAR_TIERS[2].name}：${STAR_TIERS[2].description}`}>
               <span className="lgd__star lgd__star--first" aria-hidden="true" />
-              <span className="lgd__text"><strong>一等星</strong><small>{apiConfigured ? 'おすすめ上位' : '興味が強い'}</small></span>
+              <span className="lgd__text"><strong>{STAR_TIERS[2].name}</strong><small>{STAR_TIERS[2].description}</small></span>
             </div>
-            <div role="listitem" aria-label={`二等星：${apiConfigured ? 'おすすめ候補' : '少し気になる'}`}>
+            <div role="listitem" aria-label={`${STAR_TIERS[1].name}：${STAR_TIERS[1].description}`}>
               <span className="lgd__star lgd__star--second" aria-hidden="true" />
-              <span className="lgd__text"><strong>二等星</strong><small>{apiConfigured ? 'おすすめ候補' : '少し気になる'}</small></span>
+              <span className="lgd__text"><strong>{STAR_TIERS[1].name}</strong><small>{STAR_TIERS[1].description}</small></span>
             </div>
-            <div role="listitem" aria-label={`三等星：${apiConfigured ? 'これから探索' : 'まだ未知の領域'}`}>
+            <div role="listitem" aria-label={`${STAR_TIERS[0].name}：${STAR_TIERS[0].description}`}>
               <span className="lgd__star lgd__star--third" aria-hidden="true" />
-              <span className="lgd__text"><strong>三等星</strong><small>{apiConfigured ? 'これから探索' : 'まだ未知の領域'}</small></span>
+              <span className="lgd__text"><strong>{STAR_TIERS[0].name}</strong><small>{STAR_TIERS[0].description}</small></span>
             </div>
           </div>
           <div className="hint">気になる星を選んで、その世界の本をのぞいてみよう</div>
           <WorldDetailPanel world={world} root={root} kids={kids} tier={tiers[world.id]}
             nextWorld={nextWorld}
-            tierLabel={apiConfigured ? ['三等星 · これから探索', '二等星 · おすすめ候補', '一等星 · おすすめ上位'][tiers[world.id]] : undefined}
             books={discoverySearchEnabled ? (bookResult?.themeId === world.id ? bookResult.items : []) : booksForWorld(world.id)}
             loading={discoverySearchEnabled && bookLoading} error={discoverySearchEnabled ? bookError : null}
             onRetry={() => setBookRetry((count) => count + 1)} apiMode={discoverySearchEnabled} library={library} open={panelOpen}

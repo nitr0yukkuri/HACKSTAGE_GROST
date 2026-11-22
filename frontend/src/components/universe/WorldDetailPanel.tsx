@@ -1,7 +1,7 @@
 'use client'
 
 import type { Book, Tier, World } from '../../types/hoshirube'
-import { TIER_LABEL } from '../../lib/recommendations'
+import { TIER_LABEL } from '../../lib/star-tiers'
 import { libraryBookKey, type LibraryState } from '../../lib/library-store'
 import BookCard from './BookCard'
 
@@ -11,7 +11,6 @@ interface Props {
   root: World
   kids: World[]
   tier: Tier
-  tierLabel?: string
   books: Book[]
   recs?: Book[]
   loading: boolean
@@ -33,7 +32,6 @@ export default function WorldDetailPanel({
   root,
   kids,
   tier,
-  tierLabel,
   books,
   recs = [],
   loading,
@@ -94,7 +92,7 @@ export default function WorldDetailPanel({
             <h3>{world.name}</h3>
             <p>{world.description}</p>
             <span className={`tg t${tier}`}>
-              {tierLabel ?? TIER_LABEL[tier]}
+              {TIER_LABEL[tier]}
             </span>
           </div>
         </div>

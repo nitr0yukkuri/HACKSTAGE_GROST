@@ -1,5 +1,5 @@
 export type WorldLevel = 1 | 2
-export type Tier = 0 | 1 | 2 // 0:未知 1:少し気になる 2:興味が強い
+export type Tier = 0 | 1 | 2 // 0:三等星（その他） 1:二等星（水色） 2:一等星（黄色）
 export type Scores = Record<string, number>
 
 export interface World {

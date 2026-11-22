@@ -1,4 +1,4 @@
-import type { Book, OnboardingAnswers, Scores, Tier } from '../types/hoshirube'
+import type { Book, OnboardingAnswers, Scores } from '../types/hoshirube'
 import { GENRES, WORLDS } from '../data/worlds'
 import { BOOKS } from '../data/books'
 
@@ -24,9 +24,6 @@ const CURIOSITY_BOOST: Record<OnboardingAnswers['curiosity'][number], Boost> = {
   city_origins: { his: 2, soc: 1 },
 }
 
-export const TIER_LABEL = ['三等星 · まだ未知の領域', '二等星 · 少し気になる', '一等星 · 興味が強い'] as const
-export const tierOf = (v: number): Tier => (v >= 3 ? 2 : v >= 1 ? 1 : 0)
-
 export function calcScores(a: OnboardingAnswers): Scores {
   const s: Scores = Object.fromEntries(GENRES.map((g) => [g.id, 0]))
   const genreIds = new Set(GENRES.map((g) => g.id))
@@ -44,14 +41,6 @@ export function calcScores(a: OnboardingAnswers): Scores {
     a.themes.forEach((id) => { if (genreIds.has(id)) s[id] += 3 })
   }
   return s
-}
-
-/** 全ワールドの明るさ。中ジャンルは親と同じ */
-export function tiersFor(scores: Scores): Record<string, Tier> {
-  const t: Record<string, Tier> = {}
-  GENRES.forEach((g) => (t[g.id] = tierOf(scores[g.id] ?? 0)))
-  WORLDS.filter((w) => w.parentId).forEach((w) => (t[w.id] = t[w.parentId!]))
-  return t
 }
 
 export function initialWorldId(s: Scores): string {
@@ -171,7 +160,7 @@ export function decodeAnswers(raw: string): OnboardingAnswers {
 /* ---------- 読書履歴 ---------- */
 export type ReadEntry = { bookId: string; readAt: number }
 
-const READ_POINT = 2   // 1冊読んだときの加点（初期値1.5 + 2 = 3.5 → tier 2）
+const READ_POINT = 2   // 1冊読んだときの推薦スコアへの加点。星の等級は表示色で決める。
 const DECAY = 0.6      // 1冊古くなるごとの重み。1にすると減衰なし（過去の星も光り続ける）
 
 const WORLD_BY_ID = new Map(WORLDS.map((w) => [w.id, w]))
@@ -234,14 +223,6 @@ export function recommendBooks(
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map((x) => x.b)
-}
-
-/** tier（3段階）とは別に、WebGLに渡す連続値の明るさ 0〜1 */
-export function glowsFor(scores: Scores): Record<string, number> {
-  const g: Record<string, number> = {}
-  GENRES.forEach((x) => (g[x.id] = Math.min(1, Math.max(0, (scores[x.id] ?? 0) / 5)) ** 1.5))
-  WORLDS.filter((w) => w.parentId).forEach((w) => (g[w.id] = g[w.parentId!]))
-  return g
 }
 
 /** URL用（既存の encode/decode と同じく、存在するIDだけ通す） */
