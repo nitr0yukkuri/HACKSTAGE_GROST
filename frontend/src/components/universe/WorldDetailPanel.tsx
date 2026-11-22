@@ -98,76 +98,78 @@ export default function WorldDetailPanel({
         <h4 className="panel-section-title">この星につながる本</h4>
       </div>
 
-      {loading && (
-        <p className="book-state" role="status" aria-live="polite">
-          この星につながる本を探しています…
-        </p>
-      )}
+      <div className="panel-body">
+        {loading && (
+          <p className="book-state" role="status" aria-live="polite">
+            この星につながる本を探しています…
+          </p>
+        )}
 
-      {error && (
-        <div className="book-error" role="alert">
-          <p>{error}</p>
-          <button type="button" onClick={onRetry}>
-            もう一度試す
-          </button>
-        </div>
-      )}
-
-      {!loading && !error && apiMode && books.length === 0 && (
-        <p className="book-state">
-          この星で見つかった本はありません。別の星も探してみましょう。
-        </p>
-      )}
-
-      {!loading && !error && renderBooks(otherBooks)}
-
-      {!loading && !error && hasReadInWorld && (
-        <>
-          {recs.length > 0 ? (
-            <>
-              <h4 className="panel-section-title">次の一冊</h4>
-              {renderBooks(recs)}
-            </>
-          ) : !apiMode ? (
-            <>
-              <span
-                className="tg world-complete"
-                role="status"
-                aria-label="この星の本をすべて読了"
-              >
-                読了
-              </span>
-            </>
-          ) : null}
-        </>
-      )}
-
-      {kids.length > 0 && (
-        <>
-          <h4>{root.name}の中ジャンル</h4>
-          <div className="chips">
-            {world.id !== root.id && (
-              <button type="button" onClick={() => onPick(root.id)}>
-                ← {root.name}
-              </button>
-            )}
-            {kids.map((kid) => (
-              <button
-                type="button"
-                key={kid.id}
-                className={kid.id === world.id ? 'on' : ''}
-                onClick={() => onPick(kid.id)}
-              >
-                {kid.name}
-              </button>
-            ))}
+        {error && (
+          <div className="book-error" role="alert">
+            <p>{error}</p>
+            <button type="button" onClick={onRetry}>
+              もう一度試す
+            </button>
           </div>
-        </>
-      )}
+        )}
 
-      <button type="button" className="pill" onClick={onExplore}>
-        この星を探索する →
-      </button>
+        {!loading && !error && apiMode && books.length === 0 && (
+          <p className="book-state">
+            この星で見つかった本はありません。別の星も探してみましょう。
+          </p>
+        )}
+
+        {!loading && !error && renderBooks(otherBooks)}
+
+        {!loading && !error && hasReadInWorld && (
+          <>
+            {recs.length > 0 ? (
+              <>
+                <h4 className="panel-section-title">次の一冊</h4>
+                {renderBooks(recs)}
+              </>
+            ) : !apiMode ? (
+              <>
+                <span
+                  className="tg world-complete"
+                  role="status"
+                  aria-label="この星の本をすべて読了"
+                >
+                  読了
+                </span>
+              </>
+            ) : null}
+          </>
+        )}
+
+        {kids.length > 0 && (
+          <>
+            <h4>{root.name}の中ジャンル</h4>
+            <div className="chips">
+              {world.id !== root.id && (
+                <button type="button" onClick={() => onPick(root.id)}>
+                  ← {root.name}
+                </button>
+              )}
+              {kids.map((kid) => (
+                <button
+                  type="button"
+                  key={kid.id}
+                  className={kid.id === world.id ? 'on' : ''}
+                  onClick={() => onPick(kid.id)}
+                >
+                  {kid.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <button type="button" className="pill" onClick={onExplore}>
+          この星を探索する →
+        </button>
+      </div>
     </aside>
   )
 }

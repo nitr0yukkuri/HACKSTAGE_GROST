@@ -327,6 +327,8 @@ function Universe() {
     const onWheel = (event: WheelEvent) => {
       const panel = event.target instanceof Element ? event.target.closest<HTMLElement>('.panel') : null
       if (panel) {
+        if (window.innerWidth <= 760) return
+
         const canScrollUp = panel.scrollTop > 0
         const canScrollDown = panel.scrollTop + panel.clientHeight < panel.scrollHeight - 1
         if ((event.deltaY < 0 && canScrollUp) || (event.deltaY > 0 && canScrollDown)) return
