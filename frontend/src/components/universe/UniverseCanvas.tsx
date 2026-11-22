@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Tier, World } from '../../types/hoshirube'
 import { createRenderer } from '../../lib/webgl/renderer'
+import { STAR_TIERS } from '../../lib/star-tiers'
 
 export interface ViewState { x: number; y: number; z: number }
 interface SyncLink { from: string; to: string }
@@ -19,11 +20,8 @@ interface Props {
 }
 
 type RGB = [number, number, number]
-const TIER_COLOR: RGB[] = [[0.45, 0.5, 0.68], [0.55, 0.66, 0.92], [0.78, 0.9, 1]]
-const GOLD: RGB = [1, 0.72, 0.4]
-const COMPLETE: RGB = [1, 0.67, 0.28]
 const SYNC: RGB = [0.25, 0.76, 1]
-const CHILD: RGB = [0.7, 0.95, 1]
+const TIER_COLOR: RGB[] = [[0.45, 0.5, 0.68], SYNC, [1, 0.72, 0.4]]
 
 /** WebGL2で星と星座線を描き、ラベル(button)をHTMLで重ねる。状態はpropsから受け取るだけ */
 export default function UniverseCanvas(props: Props) {
@@ -121,7 +119,7 @@ export default function UniverseCanvas(props: Props) {
         const complete = completedWorldIds.has(w.id)
         const suggested = suggestedIds.has(w.id)
         const synced = syncTargetIds.has(w.id)
-        const c = complete ? COMPLETE : synced ? SYNC : sel ? GOLD : w.level === 2 ? CHILD : TIER_COLOR[t]
+        const c = TIER_COLOR[t]
         const completionScale = complete ? (w.level === 1 ? 1.5 : 1.25) : 1
         const syncScale = synced ? 1.18 + syncPulse * 0.24 : 1
         const size = (w.level === 2 ? 38 : [24, 40, 62][t]) * (sel ? 1.3 : 1) * completionScale * syncScale * kk * (suggested ? 0.55 : 1)
@@ -234,7 +232,7 @@ export default function UniverseCanvas(props: Props) {
           const synced = syncTargetIds.has(w.id)
           const detail = complete ? '、読了済み' : synced ? '、新しいつながり' : ''
           return (
-            <button key={w.id} ref={(el) => { labels.current[w.id] = el }} aria-label={`${w.name}${detail}`}
+            <button key={w.id} ref={(el) => { labels.current[w.id] = el }} aria-label={`${w.name}、${STAR_TIERS[tiers[w.id] ?? 0].name}${detail}`}
               aria-pressed={w.id === selectedId}
               className={`n t${tiers[w.id] ?? 0}${w.level === 2 ? ' lv2' : ''}${w.id === selectedId ? ' sel' : ''}${complete ? ' is-complete' : ''}${synced ? ' is-synced' : ''}`}
               onClick={() => onPick(w.id)}>
