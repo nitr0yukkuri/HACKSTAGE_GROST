@@ -131,14 +131,17 @@ function Universe() {
     return new Set([initialWorldId(baseScores)])
   }, [answers.themes, apiConfigured, discoverySession, baseScores])
 
-  // 読了済みの本に明示的に付いている小ジャンルだけを解放する。
-  // API書籍も対象。大ジャンルしか付いていない本からは小ジャンルを推測しない。
+  // 読了済みの本に明示された小ジャンルと、タイトルで確定できる小ジャンルを解放する。
+  // Google Books の本は大ジャンルIDだけを持つため、タイトル分類の確定結果も使う。
   const unlockedChildIds = useMemo(() => {
     const childIds = new Set(WORLDS.filter((w) => w.parentId).map((w) => w.id))
     return new Set(
       Object.values(library)
         .filter((entry) => entry.status === 'read')
-        .flatMap((entry) => entry.book.worldIds)
+        .flatMap((entry) => {
+          const classification = classifyBook(entry.book)
+          return [...entry.book.worldIds, ...classification.confirmedIds]
+        })
         .filter((id) => childIds.has(id)),
     )
   }, [library])
