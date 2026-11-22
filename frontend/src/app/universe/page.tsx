@@ -17,7 +17,7 @@ import {
   type ReadEntry,
 } from '../../lib/recommendations'
 import useLibrary from '../../lib/useLibrary'
-import { getThemeBooks, isDiscoveryApiConfigured, loadDiscoverySession, type BookRecommendation, type DiscoverySession } from '../../lib/api/discovery'
+import { getThemeBooks, isDiscoveryApiConfigured, isDiscoveryThemeSupported, loadDiscoverySession, type BookRecommendation, type DiscoverySession } from '../../lib/api/discovery'
 import { libraryBookKey } from '../../lib/library-store'
 import type { Book, OnboardingAnswers, Tier } from '../../types/hoshirube'
 
@@ -188,9 +188,16 @@ function Universe() {
     (w) => w.level === 1 || visibleIds.has(w.id),
   )
   const searchQuery = discoverySession?.seed.themes.find((theme) => theme.themeId === world.id)?.searchQuery ?? world.searchQuery
+  const discoverySearchEnabled = apiConfigured && isDiscoveryThemeSupported(world.id)
 
   useEffect(() => {
     if (!apiConfigured || !discoverySession || !discoveryReady) return
+    if (!isDiscoveryThemeSupported(world.id)) {
+      setBookResult(null)
+      setBookError(null)
+      setBookLoading(false)
+      return
+    }
     const cacheKey = JSON.stringify([discoverySession.context, world.id, searchQuery])
     const cached = bookCache.current.get(cacheKey)
     if (cached) {
@@ -495,13 +502,13 @@ function Universe() {
           <div className="hint">気になる星を選んで、その世界の本をのぞいてみよう</div>
           <WorldDetailPanel world={world} root={root} kids={kids} tier={tiers[world.id]}
             tierLabel={apiConfigured ? ['これから探索', 'おすすめ候補', 'おすすめ上位'][tiers[world.id]] : undefined}
-            books={apiConfigured ? (bookResult?.themeId === world.id ? bookResult.items : []) : booksForWorld(world.id)}
-            warnings={apiConfigured && bookResult?.themeId === world.id ? bookResult.warnings : []}
-            loading={apiConfigured && bookLoading} error={apiConfigured ? bookError : null}
-            onRetry={() => setBookRetry((count) => count + 1)} apiMode={apiConfigured} library={library} open={panelOpen}
+            books={discoverySearchEnabled ? (bookResult?.themeId === world.id ? bookResult.items : []) : booksForWorld(world.id)}
+            warnings={discoverySearchEnabled && bookResult?.themeId === world.id ? bookResult.warnings : []}
+            loading={discoverySearchEnabled && bookLoading} error={discoverySearchEnabled ? bookError : null}
+            onRetry={() => setBookRetry((count) => count + 1)} apiMode={discoverySearchEnabled} library={library} open={panelOpen}
             onToggleSave={(book) => toggleSavedBook(book, world.id)}
               readIds={readIds}
-              recs={apiConfigured ? [] : recs}
+              recs={discoverySearchEnabled ? [] : recs}
               onRead={(book) => {
                 const key = libraryBookKey(book)
                 if (library[key]?.status === 'read') return
