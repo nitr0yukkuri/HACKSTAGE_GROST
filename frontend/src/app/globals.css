@@ -75,7 +75,6 @@ h2{margin:22px 0 6px;font-size:clamp(19px,3.6vw,24px);line-height:1.6}
 .n.is-complete::before{color:rgba(255,184,103,.9);animation:constellation-complete 1.25s ease-out 1}
 .n.is-synced::after{color:rgba(75,191,255,.9);animation:constellation-sync 1.55s ease-out 1}
 .n.is-synced:not(.sel) span{color:#73d1ff;text-shadow:0 0 10px rgba(79,190,255,.65),0 0 4px #040916}
-.n.is-synced:not(.sel)::after{opacity:.4;box-shadow:0 0 14px rgba(74,190,255,.72)}
 .zc{position:absolute;left:16px;top:14px;display:flex;flex-direction:column;border:1px solid var(--ln);border-radius:12px;background:rgba(10,18,40,.6);overflow:hidden}
 .zc button{width:40px;height:40px;border:0;background:none;font-size:18px}
 .lgd{position:absolute;left:16px;bottom:16px;padding:12px 16px;border:1px solid var(--ln);border-radius:14px;background:rgba(10,18,40,.72);font-size:12.5px;display:grid;gap:7px}
