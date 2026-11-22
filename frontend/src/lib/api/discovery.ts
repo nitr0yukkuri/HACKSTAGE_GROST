@@ -1,6 +1,7 @@
 import { WORLDS } from '../../data/worlds'
 import { encodeAnswers } from '../recommendations'
 import type { Book, OnboardingAnswers } from '../../types/hoshirube'
+import themeCatalog from '../../../../contracts/themes.json'
 
 export interface DiscoveryAnswer {
   questionId: string
@@ -56,6 +57,7 @@ export class DiscoveryApiError extends Error {
 const SESSION_KEY = 'hoshirube:discovery-session:v1'
 const REQUEST_TIMEOUT_MS = 30_000
 const LEVEL_1_IDS = new Set(WORLDS.filter((world) => world.level === 1).map((world) => world.id))
+const DISCOVERY_THEME_IDS = new Set(themeCatalog.themes.map((theme) => theme.id))
 let memorySession: DiscoverySession | null = null
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -86,6 +88,10 @@ function configuredBaseUrl(): string {
 
 export function isDiscoveryApiConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_API_BASE_URL?.trim())
+}
+
+export function isDiscoveryThemeSupported(themeId: string): boolean {
+  return DISCOVERY_THEME_IDS.has(themeId)
 }
 
 export function createDiscoveryContext(answers: OnboardingAnswers): DiscoveryContext {
@@ -233,7 +239,7 @@ function parseBook(payload: unknown, themeId: string): BookRecommendation {
 }
 
 export async function getThemeBooks(themeId: string, searchQuery: string, context: DiscoveryContext, signal?: AbortSignal): Promise<BookRecommendation> {
-  if (!WORLDS.some((world) => world.id === themeId)) {
+  if (!isDiscoveryThemeSupported(themeId)) {
     throw new DiscoveryApiError('指定された星がカタログにありません。', 422, 'UNKNOWN_THEME_ID')
   }
   if (!searchQuery.trim() || Array.from(searchQuery.trim()).length > 128 || searchQuery !== searchQuery.trim()) {
