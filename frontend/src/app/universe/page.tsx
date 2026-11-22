@@ -2,7 +2,7 @@
 
 import { readingLinksForLibrary } from '../../lib/reading-links'
 
-import { readingProgressForLibrary } from '../../lib/reading-progress'
+import { readingProgressForLibrary } from '../../lib/library-reading-progress'
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Link from 'next/link'
 import AppHeader from '../../components/common/AppHeader'
@@ -17,7 +17,8 @@ import {
 } from '../../lib/recommendations'
 import useLibrary from '../../lib/useLibrary'
 import { getThemeBooks, isDiscoveryApiConfigured, isDiscoveryThemeSupported, loadDiscoverySession, type BookRecommendation, type DiscoverySession } from '../../lib/api/discovery'
-import { libraryBookKey } from '../../lib/library-store'
+import { libraryBookKey, loadLibrary } from '../../lib/library-store'
+import { completedWorldIdsFor, loadWorldBookLists, rememberWorldBooks, resetWorldBookListsFallback, WORLD_BOOK_LISTS_STORAGE_KEY, type WorldBookLists } from '../../lib/reading-progress'
 import type { OnboardingAnswers, Tier } from '../../types/hoshirube'
 
 const HOME: ViewState = { x: 0, y: 0, z: 1 }
@@ -45,6 +46,7 @@ function Universe() {
   const [bookLoading, setBookLoading] = useState(false)
   const [bookError, setBookError] = useState<string | null>(null)
   const [bookRetry, setBookRetry] = useState(0)
+  const [worldBookLists, setWorldBookLists] = useState<WorldBookLists>({})
   const bookCache = useRef(new Map<string, BookRecommendation>())
   useEffect(() => {
     setAnswers(decodeAnswers(loadOnboardingAnswers()))
@@ -53,6 +55,17 @@ function Universe() {
     setDiscoveryReady(true)
   }, [apiConfigured])
   const { entries: library, save: saveBook, setReadStatus } = useLibrary()
+
+  useEffect(() => {
+    const sync = () => setWorldBookLists(loadWorldBookLists())
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === null) resetWorldBookListsFallback()
+      if (event.key === WORLD_BOOK_LISTS_STORAGE_KEY || event.key === null) sync()
+    }
+    sync()
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
   const baseScores = useMemo(() => calcScores(answers), [answers])
 
   const { history, readWorldIds, unlockedChildIds, suggestedChildIds } = useMemo(
@@ -81,6 +94,15 @@ function Universe() {
     return apiTiers
   }, [apiConfigured, discoverySession, localTiers])
 
+  const completedWorldIds = useMemo(
+    () => completedWorldIdsFor(Object.fromEntries(WORLDS.map((candidate) => [
+      candidate.id,
+      apiConfigured && isDiscoveryThemeSupported(candidate.id)
+        ? worldBookLists[candidate.id] ?? []
+        : booksForWorld(candidate.id).map(libraryBookKey),
+    ])), library),
+    [apiConfigured, worldBookLists, library],
+  )
   const [picked, setPicked] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(true)
   const [target, setTarget] = useState<ViewState>(HOME)
@@ -156,6 +178,7 @@ function Universe() {
     const cacheKey = JSON.stringify([discoverySession.context, world.id, searchQuery])
     const cached = bookCache.current.get(cacheKey)
     if (cached) {
+      setWorldBookLists(rememberWorldBooks(cached.themeId, cached.items.map(libraryBookKey), loadLibrary()))
       setBookResult(cached)
       setBookError(null)
       setBookLoading(false)
@@ -168,7 +191,9 @@ function Universe() {
     setBookLoading(true)
     getThemeBooks(world.id, searchQuery, discoverySession.context, controller.signal)
       .then((result) => {
+        if (controller.signal.aborted) return
         bookCache.current.set(cacheKey, result)
+        setWorldBookLists(rememberWorldBooks(result.themeId, result.items.map(libraryBookKey), loadLibrary()))
         setBookResult(result)
       })
       .catch((error: unknown) => {
@@ -185,15 +210,15 @@ function Universe() {
 
   const syncLinks = useMemo<SyncLink[]>(() => {
     const usedTargets = new Set<string>()
-    return WORLDS.filter((candidate) => candidate.level === 1 && readWorldIds.has(candidate.id))
+    return WORLDS.filter((candidate) => candidate.level === 1 && completedWorldIds.has(candidate.id))
       .flatMap((source) => {
         const neighbors = CONNECTIONS.flatMap(([a, b]) =>
           a === source.id ? [b] : b === source.id ? [a] : [],
         )
           .filter((id) =>
-            !readWorldIds.has(id) &&
+            !completedWorldIds.has(id) &&
             !usedTargets.has(id) &&
-            booksForWorld(id).length > 0,
+            (apiConfigured || booksForWorld(id).length > 0),
           )
           .sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0))
         const targetId = neighbors[0]
@@ -201,7 +226,10 @@ function Universe() {
         usedTargets.add(targetId)
         return [{ from: source.id, to: targetId }]
       })
-  }, [readWorldIds, scores])
+  }, [apiConfigured, completedWorldIds, scores])
+
+  const nextWorldId = syncLinks.find((link) => link.from === world.id)?.to
+  const nextWorld = WORLDS.find((candidate) => candidate.id === nextWorldId)
 
   const focusWorld = useCallback((worldId: string, zoomLevel = 1, panelVisible = panelOpen) => {
     if (typeof window === 'undefined' || window.innerWidth > 760) return
@@ -459,6 +487,7 @@ function Universe() {
           </div>
           <div className="hint">気になる星を選んで、その世界の本をのぞいてみよう</div>
           <WorldDetailPanel world={world} root={root} kids={kids} tier={tiers[world.id]}
+            nextWorld={nextWorld}
             tierLabel={apiConfigured ? ['三等星 · これから探索', '二等星 · おすすめ候補', '一等星 · おすすめ上位'][tiers[world.id]] : undefined}
             books={discoverySearchEnabled ? (bookResult?.themeId === world.id ? bookResult.items : []) : booksForWorld(world.id)}
             loading={discoverySearchEnabled && bookLoading} error={discoverySearchEnabled ? bookError : null}

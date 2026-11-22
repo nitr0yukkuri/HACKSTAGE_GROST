@@ -1,52 +1,54 @@
-import { WORLDS } from '../data/worlds'
-import type { Book } from '../types/hoshirube'
-import { classifyBook } from './book-classification'
 import type { LibraryState } from './library-store'
-import type { ReadEntry } from './recommendations'
 
-export interface ReadingProgress {
-  history: (ReadEntry & { book: Book })[]
-  readWorldIds: Set<string>
-  unlockedChildIds: Set<string>
-  suggestedChildIds: Set<string>
+export type WorldBookLists = Record<string, string[]>
+
+export const WORLD_BOOK_LISTS_STORAGE_KEY = 'hoshirube:world-books:v1'
+let memoryFallback: WorldBookLists = {}
+
+export function isWorldComplete(bookKeys: readonly string[], library: LibraryState): boolean {
+  return bookKeys.length > 0 && bookKeys.every((key) => library[key]?.status === 'read')
 }
 
-const worldById = new Map(WORLDS.map((world) => [world.id, world]))
+export function completedWorldIdsFor(bookLists: WorldBookLists, library: LibraryState): Set<string> {
+  return new Set(Object.entries(bookLists)
+    .filter(([, keys]) => isWorldComplete(keys, library))
+    .map(([worldId]) => worldId))
+}
 
-/** 保存済みの書誌を正本に、取得元によらず読了した分野を集計する。 */
-export function readingProgressForLibrary(library: LibraryState): ReadingProgress {
-  const history: ReadingProgress['history'] = []
-  const readWorldIds = new Set<string>()
-  const unlockedChildIds = new Set<string>()
-  const suggestedChildIds = new Set<string>()
+export function resetWorldBookListsFallback(): void {
+  memoryFallback = {}
+}
 
-  for (const entry of Object.values(library)) {
-    if (entry.status !== 'read') continue
-
-    const classification = classifyBook(entry.book)
-    const worldIds = [...new Set([
-      ...entry.book.worldIds,
-      ...classification.confirmedIds,
-    ])].filter((id) => worldById.has(id))
-
-    history.push({
-      bookId: entry.book.id,
-      readAt: entry.savedAt,
-      book: { ...entry.book, worldIds },
-    })
-
-    for (const id of worldIds) {
-      readWorldIds.add(id)
-      const parentId = worldById.get(id)?.parentId
-      if (parentId) {
-        readWorldIds.add(parentId)
-        unlockedChildIds.add(id)
-      }
-    }
-    classification.suggestedIds.forEach((id) => suggestedChildIds.add(id))
+export function loadWorldBookLists(): WorldBookLists {
+  if (typeof window === 'undefined') return {}
+  try {
+    const stored = window.localStorage.getItem(WORLD_BOOK_LISTS_STORAGE_KEY)
+    if (stored === null) return memoryFallback
+    const parsed: unknown = JSON.parse(stored)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    memoryFallback = Object.fromEntries(Object.entries(parsed).filter(([, keys]) =>
+      Array.isArray(keys) && keys.length > 0 &&
+      keys.every((key) => typeof key === 'string' && key.length > 0),
+    ))
+    return memoryFallback
+  } catch {
+    return memoryFallback
   }
+}
 
-  // 別の読了本で確定した中ジャンルは、薄い候補の表示へ戻さない。
-  unlockedChildIds.forEach((id) => suggestedChildIds.delete(id))
-  return { history, readWorldIds, unlockedChildIds, suggestedChildIds }
+/** APIで実際に表示した本を記録する。完読済みの組は検索結果が変わっても保持する。 */
+export function rememberWorldBooks(worldId: string, bookKeys: string[], library: LibraryState): WorldBookLists {
+  const previous = loadWorldBookLists()
+  if (bookKeys.length === 0 || isWorldComplete(previous[worldId] ?? [], library)) return previous
+
+  const next = { ...previous, [worldId]: [...new Set(bookKeys)] }
+  memoryFallback = next
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(WORLD_BOOK_LISTS_STORAGE_KEY, JSON.stringify(next))
+    } catch {
+      // Storageが使えなくても、このタブ内では完読判定を続ける。
+    }
+  }
+  return next
 }

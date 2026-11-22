@@ -12,7 +12,7 @@ require.extensions['.ts'] = (module, filename) => {
   module._compile(outputText, filename)
 }
 
-const { readingProgressForLibrary } = require('../src/lib/reading-progress.ts')
+const { readingProgressForLibrary } = require('../src/lib/library-reading-progress.ts')
 const { applyReadHistory } = require('../src/lib/recommendations.ts')
 const { libraryBookKey } = require('../src/lib/library-store.ts')
 
