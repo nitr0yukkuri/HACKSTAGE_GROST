@@ -1049,7 +1049,7 @@ paths:
           description: |
             `q`・`themeId`・ヘッダー内の回答のいずれかが不正。
             - `q` が空、128文字超、または欠落（`VALIDATION_ERROR`）
-            - `themeId` が15星にない（`VALIDATION_ERROR`、`details` に
+            - `themeId` が27星にない（`VALIDATION_ERROR`、`details` に
               `field: themeId`・`code: UNKNOWN_THEME_ID`）
             - `X-Discovery-Context` が欠落（`VALIDATION_ERROR`、`details` に
               `field: X-Discovery-Context`・`code: INVALID_REQUEST_SHAPE`）
@@ -1093,7 +1093,7 @@ paths:
                         - field: X-Discovery-Context
                           code: INVALID_REQUEST_SHAPE
                 unknown-theme:
-                  summary: themeId が15星にない
+                  summary: themeId が27星にない
                   value:
                     requestId: example-request-131
                     error:
@@ -1259,7 +1259,7 @@ components:
       type: string
       description: |
         選んだ星のID。`contracts/themes.json` の `id` と一致する。
-        大ジャンル9件・中ジャンル6件の計15件。回答で選ばなかった星も指定できる。
+        大ジャンル9件・中ジャンル18件の計27件。回答で選ばなかった星も指定できる。
         座標・色・明るさはフロントの表示関心事であり、この契約には含めない。
       enum:
         - phi
@@ -1277,6 +1277,18 @@ components:
         - tec-sec
         - mon-design
         - mon-think
+        - his-japan
+        - his-world
+        - soc-psych
+        - soc-systems
+        - sci-space
+        - sci-life
+        - art-visual
+        - art-music
+        - lan-linguistics
+        - lan-world
+        - lit-fiction
+        - lit-classics
     Level1ThemeId:
       type: string
       description: |

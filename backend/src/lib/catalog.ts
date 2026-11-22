@@ -56,7 +56,7 @@ export interface AnswerView {
   options: QuestionOption[];
 }
 
-/** contracts/themes.json の15星（大ジャンル9・中ジャンル6）。 */
+/** contracts/themes.json の27星（大ジャンル9・中ジャンル18）。 */
 export const THEMES: readonly ThemeEntry[] = themesJson.themes as ThemeEntry[];
 
 export const THEME_IDS: ReadonlySet<string> = new Set(THEMES.map((theme) => theme.id));

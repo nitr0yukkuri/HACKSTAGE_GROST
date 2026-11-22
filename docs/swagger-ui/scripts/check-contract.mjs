@@ -303,10 +303,10 @@ function test(name, fn) {
 }
 
 test('星カタログの基本形', () => {
-  assert.equal(themes.length, 15, '星は15件である必要があります')
-  assert.equal(new Set(themeIds).size, 15, '星IDが重複しています')
+  assert.equal(themes.length, 27, '星は27件である必要があります')
+  assert.equal(new Set(themeIds).size, 27, '星IDが重複しています')
   assert.equal(level1Ids.length, 9, '大ジャンルは9件である必要があります')
-  assert.equal(themes.filter((theme) => theme.parentId !== null).length, 6, '中ジャンルは6件である必要があります')
+  assert.equal(themes.filter((theme) => theme.parentId !== null).length, 18, '中ジャンルは18件である必要があります')
   for (const theme of themes) {
     assert.ok(theme.parentId === null || themeIds.includes(theme.parentId), `${theme.id}: 親IDが存在しません`)
   }
