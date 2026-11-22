@@ -52,6 +52,12 @@ export default function UniverseCanvas(props: Props) {
     if (!renderer) { setNoGl(true); return }
     const bg = Array.from({ length: 130 }, () => [Math.random(), Math.random(), 2 + Math.random() * 5, 0.25 + Math.random() * 0.5, Math.random()])
     const k: Record<string, number> = {}
+    const labelWidths = new Map<string, number>()
+    let measuredLabelViewport = -1
+    let measuredLabelSelection: string | null = null
+    let measuredLabelTiers: Record<string, Tier> | null = null
+    let measuredCompletedWorldIds: ReadonlySet<string> | null = null
+    let measuredLabelWorlds: World[] | null = null
     const view = { x: 0, y: 0, z: 1 }
     const motionPreference = matchMedia('(prefers-reduced-motion: reduce)')
     let reducedMotion = motionPreference.matches
@@ -65,6 +71,18 @@ export default function UniverseCanvas(props: Props) {
       if (document.hidden || contextLost || disposed) return
       const { worlds, tiers, completedWorldIds, suggestedIds, readingLinks, syncLinks, syncTargetIds, selectedId, target, panelOpen } = live.current
       const dp = devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight
+      if (W !== measuredLabelViewport || selectedId !== measuredLabelSelection || tiers !== measuredLabelTiers || completedWorldIds !== measuredCompletedWorldIds || worlds !== measuredLabelWorlds) {
+        labelWidths.clear()
+        worlds.forEach((w) => {
+          const span = labels.current[w.id]?.querySelector('span')
+          if (span) labelWidths.set(w.id, span.getBoundingClientRect().width)
+        })
+        measuredLabelViewport = W
+        measuredLabelSelection = selectedId
+        measuredLabelTiers = tiers
+        measuredCompletedWorldIds = completedWorldIds
+        measuredLabelWorlds = worlds
+      }
       const syncElapsed = syncAnimationStartedAt.current === null ? Number.POSITIVE_INFINITY : ms - syncAnimationStartedAt.current
       const syncProgress = Math.min(1, Math.max(0, syncElapsed / 1800))
       const syncPulse = !reducedMotion && syncElapsed >= 0 && syncElapsed < 1800 ? Math.sin(Math.PI * syncProgress) : 0
@@ -83,12 +101,16 @@ export default function UniverseCanvas(props: Props) {
         pos.set(w.id, [x, y])
         const el = labels.current[w.id]
         if (el) {
+          const mobile = W <= 760
           el.style.transform = `translate(${x - 18}px,${y - 18}px)`
           el.style.opacity = String(
             suggestedIds.has(w.id) ? 0.2 * k[w.id] : k[w.id]
           )
-          const labelWidth = el.querySelector('span')?.getBoundingClientRect().width ?? 0
-          el.classList.toggle('label-left', x + 30 + labelWidth > W - 12 && x - 30 - labelWidth > 12)
+          const labelOffset = mobile ? 8 : 12
+          const labelWidth = labelWidths.get(w.id) ?? 0
+          const labelRightOverflows = x + labelOffset + labelWidth > W - 12
+          const labelLeftFits = x - labelOffset - labelWidth >= 12
+          el.classList.toggle('label-left', labelRightOverflows && labelLeftFits)
         }
       })
 
