@@ -102,7 +102,7 @@ export default function ExploreClient() {
   const markAsRead = (book: Book) => {
     const key = libraryBookKey(book)
     if (entries[key]?.status === 'read') return
-    save(book, book.worldIds[0] ?? 'unclassified')
+    save(book, book.worldIds[0])
     setReadStatus(key, 'read')
   }
 
