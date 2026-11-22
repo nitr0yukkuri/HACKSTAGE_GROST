@@ -7,6 +7,7 @@ import BookCard from './BookCard'
 
 interface Props {
   world: World
+  nextWorld?: World
   root: World
   kids: World[]
   tier: Tier
@@ -28,6 +29,7 @@ interface Props {
 
 export default function WorldDetailPanel({
   world,
+  nextWorld,
   root,
   kids,
   tier,
@@ -51,6 +53,7 @@ export default function WorldDetailPanel({
     (book.source === 'local_demo' && Boolean(readIds?.has(book.id)))
 
   const hasReadInWorld = books.some(isRead)
+  const allRead = books.length > 0 && books.every(isRead)
   const recommendedKeys = new Set(
     hasReadInWorld ? recs.map(libraryBookKey) : [],
   )
@@ -129,17 +132,21 @@ export default function WorldDetailPanel({
                 <h4 className="panel-section-title">次の一冊</h4>
                 {renderBooks(recs)}
               </>
-            ) : !apiMode ? (
-              <>
-                <span
-                  className="tg world-complete"
-                  role="status"
-                  aria-label="この星の本をすべて読了"
-                >
-                  読了
-                </span>
-              </>
             ) : null}
+          </>
+        )}
+
+        {!loading && !error && allRead && (
+          <>
+            <div role="status" aria-live="polite" aria-label="この星の本をすべて読了">
+              <span className="tg world-complete">すべて完読</span>
+              {nextWorld && <p>{nextWorld.name}の星が光りました。</p>}
+            </div>
+            {nextWorld && (
+              <button type="button" className="pill" onClick={() => onPick(nextWorld.id)}>
+                {nextWorld.name}の星を見に行く
+              </button>
+            )}
           </>
         )}
 
