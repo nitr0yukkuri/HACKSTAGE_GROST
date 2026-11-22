@@ -1,8 +1,10 @@
 import type { Book } from '../../types/hoshirube'
+import { fallbackReason } from '../../lib/book-fallback'
 import BookCover from '../common/BookCover'
 
 interface Props {
   book: Book
+  worldName?: string
   read?: boolean
   onRead?: (book: Book) => void
   onExplore?: () => void
@@ -11,6 +13,7 @@ interface Props {
 
 export default function BookCard({
   book,
+  worldName,
   read = false,
   onRead,
   onExplore,
@@ -30,8 +33,7 @@ export default function BookCard({
           </small>
 
           <em>
-            {book.recommendationReason ??
-              'おすすめ理由はありません'}
+            {book.recommendationReason ?? fallbackReason(book, worldName)}
           </em>
 
           {book.description && (

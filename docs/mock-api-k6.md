@@ -43,7 +43,7 @@ npm run k6:load
 | `MOCK_API_DELAY_MS` | `0` | 各API応答に足す待ち時間（画面のloading確認用） |
 | `BASE_URL` | `http://127.0.0.1:8787` | k6の接続先 |
 
-本検索API `GET /v1/books/search?q=...` では、`q=__empty__` が0件、`q=__error__` が502エラーになります。星ごとの書籍API `GET /v1/themes/:themeId/books?q=...` では、`q=__empty__` が0件、`q=__warning__` が部分警告になります。これらはUI状態を手動確認するためのテスト用検索語です。
+本検索API `GET /v1/books/search?q=...` では、`q=__empty__` が0件、`q=__error__` が502エラーになります。星ごとの書籍API `GET /v1/themes/:themeId/books?q=...` では、`q=__empty__` が0件、`q=__warning__` が部分警告になります。`__empty__` と `__error__` はUI状態を手動確認するためのテスト用検索語、`__warning__` はAPIが警告（warnings）を返すことを確認するためのテスト用検索語です。
 
 ## 検証範囲
 

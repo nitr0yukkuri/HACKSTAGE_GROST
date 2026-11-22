@@ -305,10 +305,146 @@ const CONTROL_CHAR_PATTERN = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
 const LONE_SURROGATE_PATTERN =
   /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
+/** 空白・全角空白の連続。 */
+const WHITESPACE_PATTERN = /[\s\u3000]+/g;
+
+/**
+ * 定型注意書きの目印。テンプレートと一緒に現れたときだけ、そのテンプレートごと除去する。
+ * 注意ラベルは中に `【`・`】` を含めない（外側の `【` を飲み込まない）。
+ */
+const NOTICE_MARKER_SOURCE = '※|＊|\\*|【[^【】]{0,20}注意[^【】]{0,20}】';
+
+/**
+ * 目印の連なり（目印の間の空白を含む）。テンプレートの直前だけを対象にする。
+ * 走査量を抑えるため、先頭の1個に続く目印は上限付きにする。
+ */
+const MAX_NOTICE_MARKER_RUN = 4;
+const NOTICE_MARKER_PREFIX_SOURCE =
+  `(?:${NOTICE_MARKER_SOURCE})(?:\\s*(?:${NOTICE_MARKER_SOURCE})){0,${MAX_NOTICE_MARKER_RUN}}`;
+
+/**
+ * 定型注意書きの終わり。直後が「空白1つ＋句点」「文末」「閉じ括弧」の場合だけ一致する。
+ * 空白の後に普通の文字が続く場合（タグ由来の空白など）は一致させない。
+ * 句点は任意で一緒に消し、閉じ括弧は消費しない。
+ */
+const BOILERPLATE_END_SOURCE = '(?:\\s?。|(?=\\s?(?:[）)］】]|$)))';
+
+/**
+ * 目印の付かない定型注意書きの始まり。文頭・句読点・開き括弧の直後だけを許し、
+ * その間の空白は最大1つとする。文の途中からの一致を防ぐ。
+ * 文頭は `^` で、句読点・開き括弧は直後の空白だけを消費する後読みで表す。
+ */
+const BOILERPLATE_START_SOURCE = '(?:^|(?<=[。！？!?（(［【]))\\s?';
+
+/** 掲載物。T5 の続きと T6 で共通に使う。 */
+const MISSING_CONTENT_SOURCE = '(?:ページ|記事|写真|画像|付録)';
+
+/** T1 端末の注意。固定レイアウトの前置きは任意。 */
+const DEVICE_NOTICE_TEMPLATE_SOURCE =
+  'この(?:商品|電子書籍)は' +
+  '(?:固定レイアウト(?:型)?で(?:作成|配信)されており、)?' +
+  'タブレットなど大きい?ディスプレイを備えた端末で読むことに適しています' +
+  BOILERPLATE_END_SOURCE;
+
+/** T2 閲覧の推奨。「など(の大きな)端末」「端末」の言い回しだけを列挙する。 */
+const VIEWING_RECOMMENDATION_TEMPLATE_SOURCE =
+  'この(?:商品|電子書籍|書籍)は' +
+  '(?:タブレット|スマートフォン|大きい?ディスプレイ)' +
+  '(?:など(?:の(?:大きな)?端末)?|端末)?' +
+  'での閲覧を(?:推奨|おすすめ|お勧め)しています' +
+  BOILERPLATE_END_SOURCE;
+
+/** T3 固定レイアウトの配信。 */
+const FIXED_LAYOUT_TEMPLATE_SOURCE =
+  'この(?:商品|電子書籍)は固定レイアウト(?:型)?で(?:配信|作成)されて(?:おります|います)' +
+  BOILERPLATE_END_SOURCE;
+
+/** T4 機能制限で列挙する機能名。 */
+const FUNCTION_LIMIT_NAME_SOURCE = '(?:文字列のハイライト|検索|辞書の参照|引用)';
+
+/** T4 機能制限。「また、」「固定レイアウト型は」の前置きは任意。 */
+const FUNCTION_LIMIT_TEMPLATE_SOURCE =
+  '(?:また、|固定レイアウト型は)?' +
+  '文字だけを拡大すること(?:や、?|、)' +
+  FUNCTION_LIMIT_NAME_SOURCE +
+  `(?:(?:、|や)${FUNCTION_LIMIT_NAME_SOURCE}){0,3}` +
+  'など(?:の機能)?が(?:使用|利用)できません' +
+  BOILERPLATE_END_SOURCE;
+
+/** T5 電子版と紙版の差。終わり方を列挙し、任意文字の幅を持たせない。 */
+const DIGITAL_PRINT_DIFFERENCE_BODY_SOURCE =
+  '電子版(?:は|では)、?紙(?:版|の書籍|の本)(?:とは|と)、?' +
+  '(?:コンテンツ|内容)が一部' +
+  '(?:異なります' +
+  '|異なる場合があります' +
+  `|異なる場合や、掲載されない${MISSING_CONTENT_SOURCE}` +
+  `(?:(?:、|や)${MISSING_CONTENT_SOURCE}){0,2}がある場合があります)`;
+
+/** T6 の本文。T5 の直後にだけ続く「掲載されていない…」の文。 */
+const MISSING_PAGES_BODY_SOURCE =
+  `掲載されていない${MISSING_CONTENT_SOURCE}` +
+  `(?:(?:、|や)${MISSING_CONTENT_SOURCE}){0,2}があります`;
+
+/**
+ * T5 と、その直後（句点または空白、目印だけを挟む）に続く T6 をまとめて一致させる。
+ * T6 が続かない場合は T5 単独の終わりとして判定する。
+ */
+const DIGITAL_PRINT_DIFFERENCE_ITEM_SOURCE =
+  `${DIGITAL_PRINT_DIFFERENCE_BODY_SOURCE}` +
+  `(?:\\s?(?:。\\s*|\\s+)(?:${NOTICE_MARKER_PREFIX_SOURCE}\\s*)?` +
+  `${MISSING_PAGES_BODY_SOURCE}${BOILERPLATE_END_SOURCE}` +
+  `|${BOILERPLATE_END_SOURCE})`;
+
+/** 定型文1件の本体（始まりと終わりの境界は外側で付ける）。 */
+const BOILERPLATE_ITEM_SOURCE =
+  `(?:${DEVICE_NOTICE_TEMPLATE_SOURCE}` +
+  `|${VIEWING_RECOMMENDATION_TEMPLATE_SOURCE}` +
+  `|${FIXED_LAYOUT_TEMPLATE_SOURCE}` +
+  `|${FUNCTION_LIMIT_TEMPLATE_SOURCE}` +
+  `|${DIGITAL_PRINT_DIFFERENCE_ITEM_SOURCE})`;
+
+/**
+ * 定型注意書き1件。ストアの決まった文面そのものに一致した部分だけを消す。
+ * 任意文字の幅は持たせず、言い回しを列挙する。
+ * 始まりは「直前の目印の連なり」か「文頭・句読点・開き括弧の直後」に限り、
+ * 終わりは「空白1つ＋句点」「文末」「閉じ括弧」に限る。目印とテンプレートの間の
+ * 空白（正規化後の半角スペース）も一緒に消す。
+ */
+const BOILERPLATE_TEMPLATE_SOURCE =
+  `(?:${NOTICE_MARKER_PREFIX_SOURCE}\\s*${BOILERPLATE_ITEM_SOURCE}` +
+  `|${BOILERPLATE_START_SOURCE}${BOILERPLATE_ITEM_SOURCE})`;
+
+const BOILERPLATE_TEMPLATE_PATTERN = new RegExp(BOILERPLATE_TEMPLATE_SOURCE, 'g');
+
+/**
+ * 除去したテンプレートを一時的に置く印。入力の制御文字はこの段階より前に消しているため、
+ * 本文中の文字と衝突しない。
+ */
+const REMOVED_TEMPLATE_MARK = '\u0001';
+
+/**
+ * 中身がテンプレート（除去済みの印）と空白だけの括弧。括弧ごと消す。
+ * 元から空の括弧（`print()` など）を消さないよう、印を1つ以上含むことを条件にする。
+ */
+const TEMPLATE_ONLY_BRACKET_CONTENT_SOURCE =
+  `\\s*${REMOVED_TEMPLATE_MARK}[${REMOVED_TEMPLATE_MARK}\\s]*`;
+const TEMPLATE_ONLY_BRACKET_PATTERN = new RegExp(
+  `（${TEMPLATE_ONLY_BRACKET_CONTENT_SOURCE}）` +
+    `|\\(${TEMPLATE_ONLY_BRACKET_CONTENT_SOURCE}\\)` +
+    `|［${TEMPLATE_ONLY_BRACKET_CONTENT_SOURCE}］` +
+    `|【${TEMPLATE_ONLY_BRACKET_CONTENT_SOURCE}】`,
+  'g',
+);
+
+/** 入れ子の括弧を外側から順に片付けるための最大回数。 */
+const MAX_BRACKET_STRIP_PASSES = 3;
+
 /**
  * 内容紹介の整形。
  * タグ除去 → エンティティデコード → 再度タグ除去（`&lt;b&gt;` 由来のタグを消す）
- * → 制御文字除去 → 空白正規化 → 最大 1,000 コードポイント。空になったら null。
+ * → 制御文字除去 → 空白正規化 → 電子書籍ストア由来の定型注意書きの除去
+ * → 空白の再正規化 → 最大 1,000 コードポイント。空になったら null。
+ * 注意書きは切り詰めの前に取り除くので、本来の紹介文が多く残る。
  */
 export function formatDescription(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -318,14 +454,34 @@ export function formatDescription(value: unknown): string | null {
   const withoutControlChars = withoutDecodedTags
     .replace(CONTROL_CHAR_PATTERN, '')
     .replace(LONE_SURROGATE_PATTERN, '');
-  const normalized = withoutControlChars.replace(/[\s\u3000]+/g, ' ').trim();
+  const normalized = withoutControlChars.replace(WHITESPACE_PATTERN, ' ').trim();
   if (normalized === '') return null;
-  const codePoints = [...normalized];
+  const stripped = stripEbookBoilerplate(normalized).replace(WHITESPACE_PATTERN, ' ').trim();
+  if (stripped === '') return null;
+  const codePoints = [...stripped];
   const truncated =
     codePoints.length > MAX_DESCRIPTION_CODE_POINTS
       ? codePoints.slice(0, MAX_DESCRIPTION_CODE_POINTS).join('').trimEnd()
-      : normalized;
+      : stripped;
   return truncated === '' ? null : truncated;
+}
+
+/**
+ * 電子書籍ストア由来の定型注意書きを、決まった文面に一致した部分だけ取り除く。
+ * テンプレートに含まれない言い回しは残すので、未知の注意書きが残っても本文は消さない。
+ * 目印はテンプレートと一緒にだけ消し、`【入門】` のような普通の見出しは残す。
+ * 中身がテンプレートと空白だけの括弧は括弧ごと消し、括弧の外の本文には触れない。
+ * 入れ子の括弧（`（［※…］）` など）は、内側から順に最大 `MAX_BRACKET_STRIP_PASSES` 回片付ける。
+ */
+function stripEbookBoilerplate(text: string): string {
+  let current = text.replace(BOILERPLATE_TEMPLATE_PATTERN, REMOVED_TEMPLATE_MARK);
+  for (let pass = 0; pass < MAX_BRACKET_STRIP_PASSES; pass += 1) {
+    // 片付けた括弧も印に置き換え、外側の括弧をもう一度判定できるようにする。
+    const next = current.replace(TEMPLATE_ONLY_BRACKET_PATTERN, REMOVED_TEMPLATE_MARK);
+    if (next === current) break;
+    current = next;
+  }
+  return current.split(REMOVED_TEMPLATE_MARK).join('');
 }
 
 function removeHtmlTags(value: string): string {

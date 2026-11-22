@@ -398,16 +398,24 @@ function Universe() {
             <button aria-label="縮小" onClick={() => zoom(1 / 1.3)}>－</button>
             <button aria-label="中心に戻す" onClick={() => { if (window.innerWidth <= 760) focusWorld(selectedId, 1, panelOpen); else setTarget(HOME) }}>◎</button>
           </div>
-          <div className="lgd" role="list" aria-label="星の等級">
-            <div role="listitem" aria-label={`一等星：${apiConfigured ? 'おすすめ上位' : '興味が強い'}`}><s aria-hidden="true" />一等星</div>
-            <div role="listitem" aria-label={`二等星：${apiConfigured ? 'おすすめ候補' : '少し気になる'}`}><s className="b" aria-hidden="true" />二等星</div>
-            <div role="listitem" aria-label={`三等星：${apiConfigured ? 'これから探索' : 'まだ未知の領域'}`}><s className="c" aria-hidden="true" />三等星</div>
+          <div className="lgd" role="list" aria-label="星の等級と意味">
+            <div role="listitem" aria-label={`一等星：${apiConfigured ? 'おすすめ上位' : '興味が強い'}`}>
+              <span className="lgd__star lgd__star--first" aria-hidden="true" />
+              <span className="lgd__text"><strong>一等星</strong><small>{apiConfigured ? 'おすすめ上位' : '興味が強い'}</small></span>
+            </div>
+            <div role="listitem" aria-label={`二等星：${apiConfigured ? 'おすすめ候補' : '少し気になる'}`}>
+              <span className="lgd__star lgd__star--second" aria-hidden="true" />
+              <span className="lgd__text"><strong>二等星</strong><small>{apiConfigured ? 'おすすめ候補' : '少し気になる'}</small></span>
+            </div>
+            <div role="listitem" aria-label={`三等星：${apiConfigured ? 'これから探索' : 'まだ未知の領域'}`}>
+              <span className="lgd__star lgd__star--third" aria-hidden="true" />
+              <span className="lgd__text"><strong>三等星</strong><small>{apiConfigured ? 'これから探索' : 'まだ未知の領域'}</small></span>
+            </div>
           </div>
           <div className="hint">気になる星を選んで、その世界の本をのぞいてみよう</div>
           <WorldDetailPanel world={world} root={root} kids={kids} tier={tiers[world.id]}
-            tierLabel={apiConfigured ? ['これから探索', 'おすすめ候補', 'おすすめ上位'][tiers[world.id]] : undefined}
+            tierLabel={apiConfigured ? ['三等星 · これから探索', '二等星 · おすすめ候補', '一等星 · おすすめ上位'][tiers[world.id]] : undefined}
             books={apiConfigured ? (bookResult?.themeId === world.id ? bookResult.items : []) : booksForWorld(world.id)}
-            warnings={apiConfigured && bookResult?.themeId === world.id ? bookResult.warnings : []}
             loading={apiConfigured && bookLoading} error={apiConfigured ? bookError : null}
             onRetry={() => setBookRetry((count) => count + 1)} apiMode={apiConfigured} library={library} open={panelOpen}
               readIds={readIds}
