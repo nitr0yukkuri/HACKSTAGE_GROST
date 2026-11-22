@@ -99,6 +99,12 @@ function books(themeId, q, context, tag, expectedStatus = 200, include = null) {
   return http.get(`${BASE_URL}/v1/themes/${encodeURIComponent(themeId)}/books?q=${query}${includeQuery}`, params)
 }
 
+function searchBooks(query, tag, expectedStatus = 200) {
+  const params = { tags: { name: 'book-search', case: tag } }
+  if (expectedStatus !== 200) params.responseCallback = http.expectedStatuses(expectedStatus)
+  return http.get(`${BASE_URL}/v1/books/search?q=${encodeURIComponent(query)}`, params)
+}
+
 export default function () {
   const seeded = seed(NORMAL_CONTEXT, LOAD_PROFILE ? 'load-flow' : 'v2-normal')
   const seedOk = check(seeded, {
@@ -142,6 +148,54 @@ export default function () {
   }
 
   if (LOAD_PROFILE) return
+
+  const bookSearch = searchBooks('哲学', 'normal')
+  check(bookSearch, {
+    'book search responds 200': (response) => response.status === 200,
+    'book search has a request ID': (response) => typeof response.json('requestId') === 'string',
+    'book search returns three fixtures': (response) => response.json('items')?.length === 3,
+    'book search fixture belongs to philosophy': (response) => response.json('items')?.every((book) => book.worldIds?.[0] === 'phi'),
+    'book search returns contract-shaped books': (response) => response.json('items')?.every((book) =>
+      typeof book.id === 'string' && book.source === 'google_books' && typeof book.title === 'string' &&
+      Array.isArray(book.authors) && book.coverUrl === null && book.description === null &&
+      book.recommendationReason === null && book.infoUrl === null && Array.isArray(book.worldIds)),
+    'book search response is no-store': (response) => response.headers['Cache-Control'] === 'no-store',
+  })
+
+  const emptyBookSearch = searchBooks('__empty__', 'empty')
+  check(emptyBookSearch, {
+    'book search empty fixture responds 200': (response) => response.status === 200 && response.json('items')?.length === 0,
+  })
+
+  const failedBookSearch = searchBooks('__error__', 'upstream-error', 502)
+  check(failedBookSearch, {
+    'book search error fixture uses the standard envelope': (response) =>
+      response.status === 502 && response.json('error.code') === 'BOOKS_UPSTREAM_ERROR' &&
+      typeof response.json('requestId') === 'string',
+  })
+
+  const blankBookSearch = searchBooks(' ', 'blank-query', 422)
+  check(blankBookSearch, {
+    'blank book search query is rejected': (response) => response.json('error.details.0.field') === 'q',
+  })
+
+  const maxBookSearch = searchBooks('😀'.repeat(128), 'max-code-point-query')
+  check(maxBookSearch, {
+    'book search accepts 128 Unicode code points': (response) => response.status === 200 && response.json('items')?.length === 3,
+  })
+
+  const longBookSearch = searchBooks('😀'.repeat(129), 'too-long-code-point-query', 422)
+  check(longBookSearch, {
+    'book search rejects 129 Unicode code points': (response) => response.status === 422,
+  })
+
+  const duplicateBookSearch = http.get(`${BASE_URL}/v1/books/search?q=first&q=second`, {
+    responseCallback: http.expectedStatuses(422),
+    tags: { name: 'book-search', case: 'duplicate-query' },
+  })
+  check(duplicateBookSearch, {
+    'duplicate book search query is rejected': (response) => response.status === 422 && response.json('error.details.0.field') === 'q',
+  })
 
   const noneSeed = seed(NONE_CONTEXT, 'v2-none-with-curiosity')
   check(noneSeed, {

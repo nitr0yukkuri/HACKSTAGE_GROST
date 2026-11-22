@@ -1,6 +1,6 @@
 # ローカルAPIモックとk6
 
-フロントのAPI接続を、AWSやGoogle Booksの認証情報なしで通し確認するためのローカル専用環境です。モックは質問票・星カタログの契約JSONを読み込み、seed・書籍取得・入力検証・CORS・エラー形式を実行します。応答する書籍は架空のfixtureです。
+フロントのAPI接続を、AWSやGoogle Booksの認証情報なしで通し確認するためのローカル専用環境です。モックは質問票・星カタログの契約JSONを読み込み、seed・星ごとの書籍取得・本検索・入力検証・CORS・エラー形式を実行します。応答する書籍は架空のfixtureです。
 
 ## 起動
 
@@ -18,7 +18,7 @@ npm run mock:api
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8787
 ```
 
-API URLを設定した状態ではseedまたは書籍取得に失敗しても固定データへ切り替えません。APIモックを停止したままこの設定を有効にすると、画面はエラーと再試行を表示します。API URLを外せばローカルデモへ戻ります。
+API URLを設定した状態ではseed・星ごとの書籍取得・本検索に失敗しても固定データへ切り替えません。APIモックを停止したままこの設定を有効にすると、画面はエラーと再試行を表示します。API URLを外せばローカルデモへ戻ります。
 
 ## k6シナリオ
 
@@ -29,7 +29,7 @@ npm run k6:smoke
 npm run k6:load
 ```
 
-`k6:smoke` は、health・CORS preflight、v2通常回答、`interest=none` と追加質問、v1互換、3つの異なるseed星、seedから書籍取得、最大冊数と応答形式を確認します。回答の形・件数・質問ID・重複・選択数・選択肢・排他条件、JSON/Content-Type、本文とヘッダーの上限、検索語のUnicode文字数境界、不明な星、回答ヘッダーの欠落・形式、0件、部分警告も検査します。k6のcheck rateが100%でない場合は失敗します。
+`k6:smoke` は、health・CORS preflight、v2通常回答、`interest=none` と追加質問、v1互換、3つの異なるseed星、星ごとの書籍取得、本検索APIの通常結果・0件・エラー・入力境界を確認します。回答の形・件数・質問ID・重複・選択数・選択肢・排他条件、JSON/Content-Type、本文とヘッダーの上限、検索語のUnicode文字数境界、重複クエリ、不明な星、回答ヘッダーの欠落・形式、部分警告も検査します。k6のcheck rateが100%でない場合は失敗します。
 
 `k6:load` は seed → 先頭星の書籍取得を繰り返し、1から5 VUへ段階的に増やします。モック専用の目安として、check rate 100%、HTTP失敗率1%未満、応答時間p95 500ms未満・p99 1000ms未満を設定しています。この値はAWSや本番のSLOではありません。
 
@@ -43,7 +43,7 @@ npm run k6:load
 | `MOCK_API_DELAY_MS` | `0` | 各API応答に足す待ち時間（画面のloading確認用） |
 | `BASE_URL` | `http://127.0.0.1:8787` | k6の接続先 |
 
-書籍APIに `q=__empty__` を渡すと0件、`q=__warning__` を渡すと部分警告を返します。`__empty__` はUI状態を手動確認するためのテスト用検索語、`__warning__` はAPIが警告（warnings）を返すことを確認するためのテスト用検索語です。
+本検索API `GET /v1/books/search?q=...` では、`q=__empty__` が0件、`q=__error__` が502エラーになります。星ごとの書籍API `GET /v1/themes/:themeId/books?q=...` では、`q=__empty__` が0件、`q=__warning__` が部分警告になります。`__empty__` と `__error__` はUI状態を手動確認するためのテスト用検索語、`__warning__` はAPIが警告（warnings）を返すことを確認するためのテスト用検索語です。
 
 ## 検証範囲
 

@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
@@ -243,6 +243,35 @@ function mockBooks(themeId) {
   ]
 }
 
+function mockSearchBooks(query) {
+  const normalized = query.normalize('NFKC').toLocaleLowerCase()
+  const theme = themeCatalog.themes.find((candidate) =>
+    candidate.parentId === null &&
+    [candidate.name, candidate.searchQuery].some((value) =>
+      normalized.includes(value.normalize('NFKC').toLocaleLowerCase()),
+    ),
+  )
+  const worldIds = theme ? [theme.id] : []
+  const queryId = createHash('sha256').update(normalized).digest('hex').slice(0, 10)
+  return [
+    {
+      id: `mock-search-${queryId}-001`, source: 'google_books', title: `ローカル検索モック：${query}の基本`,
+      authors: ['ほしるべ ローカルAPIモック'], coverUrl: null, description: null,
+      recommendationReason: null, infoUrl: null, worldIds,
+    },
+    {
+      id: `mock-search-${queryId}-002`, source: 'google_books', title: `ローカル検索モック：${query}を楽しむ`,
+      authors: ['API動作確認用'], coverUrl: null, description: null,
+      recommendationReason: null, infoUrl: null, worldIds,
+    },
+    {
+      id: `mock-search-${queryId}-003`, source: 'google_books', title: `はじめての${query}（モック）`,
+      authors: ['テスト著者'], coverUrl: null, description: null,
+      recommendationReason: null, infoUrl: null, worldIds,
+    },
+  ]
+}
+
 const server = createServer(async (request, response) => {
   const startedAt = performance.now()
   const requestId = `mock-${randomUUID()}`
@@ -274,6 +303,35 @@ const server = createServer(async (request, response) => {
 
     if (url.pathname === '/health' && method === 'GET') {
       finish(200, { status: 'ok' })
+      return
+    }
+
+    if (url.pathname === '/v1/books/search') {
+      if (method !== 'GET') {
+        status = 405
+        methodNotAllowed(response, 'GET, OPTIONS')
+        return
+      }
+      const queries = url.searchParams.getAll('q')
+      const query = queries[0]?.trim() ?? ''
+      const queryLength = Array.from(query).length
+      if (queries.length !== 1 || queryLength < 1 || queryLength > 128) {
+        finish(422, {
+          code: 'VALIDATION_ERROR',
+          message: '検索語を確認してください。',
+          details: [detail('q', 'INVALID_REQUEST_SHAPE')],
+        }, true)
+        return
+      }
+      if (query === '__error__') {
+        finish(502, {
+          code: 'BOOKS_UPSTREAM_ERROR',
+          message: 'ローカルAPIの検索エラー確認用です。',
+          details: [],
+        }, true)
+        return
+      }
+      finish(200, { items: query === '__empty__' ? [] : mockSearchBooks(query) })
       return
     }
 
