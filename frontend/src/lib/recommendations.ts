@@ -1,6 +1,7 @@
 import type { Book, OnboardingAnswers, Scores, Tier } from '../types/hoshirube'
 import { GENRES, WORLDS } from '../data/worlds'
 import { BOOKS } from '../data/books'
+import { libraryBookKey } from './library-store'
 
 type Boost = Partial<Scores> | 'all'
 
@@ -169,7 +170,7 @@ export function decodeAnswers(raw: string): OnboardingAnswers {
 }
 
 /* ---------- 読書履歴 ---------- */
-export type ReadEntry = { bookId: string; readAt: number }
+export type ReadEntry = { bookId: string; readAt: number; book?: Book }
 
 const READ_POINT = 2   // 1冊読んだときの加点（初期値1.5 + 2 = 3.5 → tier 2）
 const DECAY = 0.6      // 1冊古くなるごとの重み。1にすると減衰なし（過去の星も光り続ける）
@@ -185,11 +186,11 @@ export function applyReadHistory(base: Scores, history: ReadEntry[]): Scores {
   const readIds = new Set<string>()
 
   for (const entry of history) {
-    if (readIds.has(entry.bookId)) continue
-    readIds.add(entry.bookId)
-
-    const book = bookById.get(entry.bookId)
+    const book = entry.book ?? bookById.get(entry.bookId)
     if (!book) continue
+    const key = libraryBookKey(book)
+    if (readIds.has(key)) continue
+    readIds.add(key)
 
     const genres = genresOfBook(book)
 
