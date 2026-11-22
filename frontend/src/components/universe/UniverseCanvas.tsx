@@ -8,7 +8,7 @@ interface SyncLink { from: string; to: string }
 interface Props {
   worlds: World[]
   tiers: Record<string, Tier>
-  completedWorldIds: ReadonlySet<string>
+  readWorldIds: ReadonlySet<string>
   suggestedIds: ReadonlySet<string>
   readingLinks: { from: string; to: string; reason: 'shared-book' | 'reading-journey' }[]
   syncLinks: SyncLink[]
@@ -27,7 +27,7 @@ const CHILD: RGB = [0.7, 0.95, 1]
 
 /** WebGL2で星と星座線を描き、ラベル(button)をHTMLで重ねる。状態はpropsから受け取るだけ */
 export default function UniverseCanvas(props: Props) {
-  const { worlds, tiers, completedWorldIds, suggestedIds, readingLinks, syncLinks, selectedId, panelOpen, onPick } = props
+  const { worlds, tiers, readWorldIds, suggestedIds, readingLinks, syncLinks, selectedId, panelOpen, onPick } = props
   const cv = useRef<HTMLCanvasElement>(null)
   const syncAnimationStartedAt = useRef<number | null>(null)
   const syncSignature = useMemo(() => syncLinks.map((link) => `${link.from}>${link.to}`).join('|'), [syncLinks])
@@ -63,7 +63,7 @@ export default function UniverseCanvas(props: Props) {
       raf = 0
       raf = 0
       if (document.hidden || contextLost || disposed) return
-      const { worlds, tiers, completedWorldIds, suggestedIds, readingLinks, syncLinks, syncTargetIds, selectedId, target, panelOpen } = live.current
+      const { worlds, tiers, readWorldIds, suggestedIds, readingLinks, syncLinks, syncTargetIds, selectedId, target, panelOpen } = live.current
       const dp = devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight
       const syncElapsed = syncAnimationStartedAt.current === null ? Number.POSITIVE_INFINITY : ms - syncAnimationStartedAt.current
       const syncProgress = Math.min(1, Math.max(0, syncElapsed / 1800))
@@ -96,10 +96,10 @@ export default function UniverseCanvas(props: Props) {
       bg.forEach((s) => pts.push(s[0] * W * dp, s[1] * H * dp, s[2] * dp, s[3], s[4], 0.6, 0.75, 1))
       worlds.forEach((w) => {
         const t = tiers[w.id] ?? 0, kk = k[w.id], [x, y] = pos.get(w.id)!, sel = w.id === selectedId
-        const complete = completedWorldIds.has(w.id)
+        const complete = readWorldIds.has(w.id)
         const suggested = suggestedIds.has(w.id)
         const synced = syncTargetIds.has(w.id)
-        const c = complete ? COMPLETE : synced ? SYNC : sel ? GOLD : w.level === 2 ? CHILD : TIER_COLOR[t]
+        const c = synced ? SYNC : complete ? COMPLETE : sel ? GOLD : w.level === 2 ? CHILD : TIER_COLOR[t]
         const completionScale = complete ? (w.level === 1 ? 1.5 : 1.25) : 1
         const syncScale = synced ? 1.18 + syncPulse * 0.24 : 1
         const size = (w.level === 2 ? 38 : [24, 40, 62][t]) * (sel ? 1.3 : 1) * completionScale * syncScale * kk * (suggested ? 0.55 : 1)
@@ -191,7 +191,7 @@ export default function UniverseCanvas(props: Props) {
 
   useEffect(() => {
     scheduleRender.current()
-  }, [props.worlds, props.tiers, props.completedWorldIds, props.suggestedIds, props.readingLinks, props.syncLinks, props.selectedId, props.target, props.panelOpen])
+  }, [props.worlds, props.tiers, props.readWorldIds, props.suggestedIds, props.readingLinks, props.syncLinks, props.selectedId, props.target, props.panelOpen])
 
   useEffect(() => {
     syncAnimationStartedAt.current = syncSignature ? performance.now() : null
@@ -208,9 +208,9 @@ export default function UniverseCanvas(props: Props) {
       )}
       <div className={`lab${noGl || glError ? ` fallback${panelOpen ? ' panel-open' : ''}` : ''}`}>
         {worlds.filter((w) => !suggestedIds.has(w.id)).map((w) => {
-          const complete = completedWorldIds.has(w.id)
+          const complete = readWorldIds.has(w.id)
           const synced = syncTargetIds.has(w.id)
-          const detail = complete ? '、読了済み' : synced ? '、新しいつながり' : ''
+          const detail = synced ? '、新しいつながり' : complete ? '、読了済み' : ''
           return (
             <button key={w.id} ref={(el) => { labels.current[w.id] = el }} aria-label={`${w.name}${detail}`}
               aria-pressed={w.id === selectedId}

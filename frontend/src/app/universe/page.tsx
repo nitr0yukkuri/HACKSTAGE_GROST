@@ -2,7 +2,7 @@
 
 import { readingLinksForLibrary } from '../../lib/reading-links'
 
-import { classifyBook } from '../../lib/book-classification'
+import { readingProgressForLibrary } from '../../lib/library-reading-progress'
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Link from 'next/link'
 import AppHeader from '../../components/common/AppHeader'
@@ -14,7 +14,6 @@ import { CONNECTIONS } from '../../data/connections'
 import {
   applyReadHistory,
   recommendNextInWorld,
-  type ReadEntry,
 } from '../../lib/recommendations'
 import useLibrary from '../../lib/useLibrary'
 import { getThemeBooks, isDiscoveryApiConfigured, isDiscoveryThemeSupported, loadDiscoverySession, type BookRecommendation, type DiscoverySession } from '../../lib/api/discovery'
@@ -69,21 +68,17 @@ function Universe() {
   }, [])
   const baseScores = useMemo(() => calcScores(answers), [answers])
 
-  const history = useMemo<ReadEntry[]>(
-    () => Object.values(library)
-      .filter((entry) =>
-        entry.status === 'read' && entry.book.source === 'local_demo'
-      )
-      .map((entry) => ({
-        bookId: entry.book.id,
-        readAt: entry.savedAt,
-      })),
-    [library],
+  const { history, readWorldIds, unlockedChildIds, suggestedChildIds } = useMemo(
+    () => readingProgressForLibrary(library), [library],
+  )
+  // 固定デモ本から選ぶ「次の一冊」だけは、同じ取得元のIDで判定する。
+  const localHistory = useMemo(
+    () => history.filter((entry) => entry.book.source === 'local_demo'), [history],
   )
 
   const readIds = useMemo(
-    () => new Set(history.map((entry) => entry.bookId)),
-    [history],
+    () => new Set(localHistory.map((entry) => entry.bookId)),
+    [localHistory],
   )
 
   const scores = useMemo(
@@ -126,8 +121,8 @@ function Universe() {
       : initialWorldId(scores))
   )
   const recs = useMemo(
-    () => recommendNextInWorld(selectedId, history),
-    [selectedId, history],
+    () => recommendNextInWorld(selectedId, localHistory),
+    [selectedId, localHistory],
   )
 
   const world = WORLDS.find((w) => w.id === selectedId)!
@@ -145,39 +140,6 @@ function Universe() {
 
     return new Set([initialWorldId(baseScores)])
   }, [answers.themes, apiConfigured, discoverySession, baseScores])
-
-  // 読了済みの本に明示された小ジャンルと、タイトルで確定できる小ジャンルを解放する。
-  // Google Books の本は大ジャンルIDだけを持つため、タイトル分類の確定結果も使う。
-  const unlockedChildIds = useMemo(() => {
-    const childIds = new Set(WORLDS.filter((w) => w.parentId).map((w) => w.id))
-    return new Set(
-      Object.values(library)
-        .filter((entry) => entry.status === 'read')
-        .flatMap((entry) => {
-          const classification = classifyBook(entry.book)
-          return [...entry.book.worldIds, ...classification.confirmedIds]
-        })
-        .filter((id) => childIds.has(id)),
-    )
-  }, [library])
-
-  // 読了済みの本から、まだ解放されていない関連分野を探す。
-  // 推定結果は確定扱いせず、候補として保持する。
-  const suggestedChildIds = useMemo(() => {
-    const candidates = Object.values(library)
-      .filter((entry) => entry.status === 'read')
-      .flatMap((entry) => {
-        const classification = classifyBook(entry.book)
-        return [
-          ...classification.confirmedIds,
-          ...classification.suggestedIds,
-        ]
-      })
-
-    return new Set(
-      candidates.filter((id) => !unlockedChildIds.has(id)),
-    )
-  }, [library, unlockedChildIds])
 
   // 読了によって解放された中ジャンルのみ、パネルから選択できる。
   const kids = WORLDS.filter(
@@ -495,7 +457,7 @@ function Universe() {
           <UniverseCanvas
               worlds={visible}
               tiers={tiers}
-              completedWorldIds={completedWorldIds}
+              readWorldIds={readWorldIds}
               suggestedIds={suggestedChildIds}
               readingLinks={readingLinks}
               syncLinks={syncLinks}
