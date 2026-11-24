@@ -17,7 +17,7 @@ bedrock_destination_regions   = ["ap-northeast-1"]
 google_books_api_key_param_name = "/hoshirube/google-books-api-key"
 
 # ローカル開発に加えて Vercel のオリジンを許可する例。"*" は validation で拒否する。
-# cors_allow_origins = ["http://localhost:3000", "https://hoshirube-nitr0s-projects.vercel.app"]
+# cors_allow_origins = ["http://localhost:3000", "https://hoshirube.vercel.app"]
 cors_allow_origins = ["http://localhost:3000"]
 
 # API Gateway のスロットリング。1人の利用者が seed 1回（最大2回の Bedrock 呼び出し）と
