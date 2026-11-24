@@ -10,37 +10,35 @@ const worlds = [
 ]
 
 test('黄色の完読星は一等星、水色のつながり先は二等星、それ以外は三等星', () => {
-  const tiers = starTiersFor(worlds, new Set(['phi']), new Set(['soc']), null)
+  const tiers = starTiersFor(worlds, new Set(['phi']), new Set(['soc']))
   assert.equal(tiers.phi, 2)
   assert.equal(tiers.soc, 1)
   assert.equal(tiers.tec, 0)
 })
 
-test('選択した黄色の星は一等星になり、選択を移すと元の星の等級へ戻る', () => {
-  const before = starTiersFor(worlds, new Set(), new Set(), 'phi')
-  const after = starTiersFor(worlds, new Set(), new Set(), 'tec')
-  assert.equal(before.phi, 2)
-  assert.equal(after.phi, 0)
-  assert.equal(after.tec, 2)
+test('未完読の通常星は選択表示に関係なく三等星のまま', () => {
+  const tiers = starTiersFor(worlds, new Set(), new Set())
+  assert.equal(tiers.phi, 0)
+  assert.equal(tiers.tec, 0)
 })
 
 test('つながり先は選択中も水色の二等星、完読したら黄色の一等星にする', () => {
-  const cyan = starTiersFor(worlds, new Set(), new Set(['soc']), 'soc')
-  const yellow = starTiersFor(worlds, new Set(['soc']), new Set(['soc']), 'soc')
+  const cyan = starTiersFor(worlds, new Set(), new Set(['soc']))
+  const yellow = starTiersFor(worlds, new Set(['soc']), new Set(['soc']))
   assert.equal(cyan.soc, 1)
   assert.equal(yellow.soc, 2)
 })
 
 test('中ジャンルも自身の色で判定し、親の一等星を引き継がない', () => {
-  const cyan = starTiersFor(worlds, new Set(['phi']), new Set(), null)
+  const cyan = starTiersFor(worlds, new Set(['phi']), new Set())
   assert.equal(cyan['phi-logic'], 1)
-  const yellow = starTiersFor(worlds, new Set(['phi', 'phi-logic']), new Set(), null)
+  const yellow = starTiersFor(worlds, new Set(['phi', 'phi-logic']), new Set())
   assert.equal(yellow['phi-logic'], 2)
 })
 
 test('完読取消・つながり解除を反映し、過去の等級を残さない', () => {
-  const before = starTiersFor(worlds, new Set(['phi']), new Set(['soc']), null)
-  const after = starTiersFor(worlds, new Set(), new Set(), null)
+  const before = starTiersFor(worlds, new Set(['phi']), new Set(['soc']))
+  const after = starTiersFor(worlds, new Set(), new Set())
   assert.equal(before.phi, 2)
   assert.equal(before.soc, 1)
   assert.equal(after.phi, 0)

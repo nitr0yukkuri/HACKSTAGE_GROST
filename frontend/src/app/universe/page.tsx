@@ -259,8 +259,8 @@ function Universe() {
   }, [apiConfigured, completedWorldIds, scores])
 
   const tiers = useMemo(
-    () => starTiersFor(WORLDS, completedWorldIds, new Set(syncLinks.map((link) => link.to)), selectedId),
-    [completedWorldIds, syncLinks, selectedId],
+    () => starTiersFor(WORLDS, completedWorldIds, new Set(syncLinks.map((link) => link.to))),
+    [completedWorldIds, syncLinks],
   )
 
   const nextWorldId = syncLinks.find((link) => link.from === world.id)?.to
