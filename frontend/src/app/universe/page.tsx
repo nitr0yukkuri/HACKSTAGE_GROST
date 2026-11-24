@@ -102,14 +102,17 @@ function Universe() {
   )
   const [picked, setPicked] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(true)
-  const [target, setTarget] = useState<ViewState>(HOME)
   const mapRef = useRef<HTMLDivElement>(null)
   const activePan = useRef<ActivePan | null>(null)
   const activePointers = useRef(new Map<number, TouchPoint>())
   const activePinch = useRef<ActivePinch | null>(null)
-  const targetRef = useRef(target)
+  const targetRef = useRef<ViewState>(HOME)
+  const requestCanvasRenderRef = useRef<() => void>(() => {})
   const finishPointerRef = useRef<(pointerId: number, map: HTMLDivElement) => void>(() => {})
-  targetRef.current = target
+  const updateTarget = useCallback((next: ViewState | ((current: ViewState) => ViewState)) => {
+    targetRef.current = typeof next === 'function' ? next(targetRef.current) : next
+    requestCanvasRenderRef.current()
+  }, [])
 
   const selectedId = picked ?? (
     answers.themes.find((id) => WORLDS.some((w) => w.id === id && w.level === 1))
@@ -138,38 +141,31 @@ function Universe() {
     return new Set([initialWorldId(baseScores)])
   }, [answers.themes, apiConfigured, discoverySession, baseScores])
 
-  // 読了済みの本に明示された小ジャンルと、タイトルで確定できる小ジャンルを解放する。
-  // Google Books の本は大ジャンルIDだけを持つため、タイトル分類の確定結果も使う。
-  const unlockedChildIds = useMemo(() => {
+  // 読了済みの本の分類は一度だけ計算し、解放済みと関連候補を同時に作る。
+  const { unlockedChildIds, suggestedChildIds } = useMemo(() => {
     const childIds = new Set(WORLDS.filter((w) => w.parentId).map((w) => w.id))
-    return new Set(
-      Object.values(library)
-        .filter((entry) => entry.status === 'read')
-        .flatMap((entry) => {
-          const classification = classifyBook(entry.book)
-          return [...entry.book.worldIds, ...classification.confirmedIds]
-        })
-        .filter((id) => childIds.has(id)),
-    )
-  }, [library])
+    const unlocked = new Set<string>()
+    const candidates = new Set<string>()
 
-  // 読了済みの本から、まだ解放されていない関連分野を探す。
-  // 推定結果は確定扱いせず、候補として保持する。
-  const suggestedChildIds = useMemo(() => {
-    const candidates = Object.values(library)
-      .filter((entry) => entry.status === 'read')
-      .flatMap((entry) => {
-        const classification = classifyBook(entry.book)
-        return [
-          ...classification.confirmedIds,
-          ...classification.suggestedIds,
-        ]
+    Object.values(library).forEach((entry) => {
+      if (entry.status !== 'read') return
+      const classification = classifyBook(entry.book)
+
+      entry.book.worldIds.forEach((id) => {
+        if (childIds.has(id)) unlocked.add(id)
       })
+      classification.confirmedIds.forEach((id) => {
+        unlocked.add(id)
+        candidates.add(id)
+      })
+      classification.suggestedIds.forEach((id) => candidates.add(id))
+    })
 
-    return new Set(
-      candidates.filter((id) => !unlockedChildIds.has(id)),
+    const suggested = new Set(
+      [...candidates].filter((id) => !unlocked.has(id)),
     )
-  }, [library, unlockedChildIds])
+    return { unlockedChildIds: unlocked, suggestedChildIds: suggested }
+  }, [library])
 
   // 読了によって解放された中ジャンルのみ、パネルから選択できる。
   const kids = WORLDS.filter(
@@ -284,19 +280,19 @@ function Universe() {
     const scaleY = mapRect.height * 0.3 * zoomLevel
     const targetY = focus.position.y + (mapRect.height / 2 - desiredY) / scaleY
 
-    setTarget({
+    updateTarget({
       x: clamp(focus.position.x),
       y: clamp(targetY, 2.2),
       z: zoomLevel,
     })
-  }, [panelOpen])
+  }, [panelOpen, updateTarget])
 
   useEffect(() => {
     if (answersReady) focusWorld(selectedId, 1, panelOpen)
   }, [answersReady, selectedId, panelOpen, focusWorld])
 
   const pick = (id: string) => { setPicked(id); setPanelOpen(true) }
-  const zoom = (f: number) => setTarget((t) => ({ ...t, z: Math.min(3, Math.max(0.6, t.z * f)) }))
+  const zoom = (f: number) => updateTarget((t) => ({ ...t, z: Math.min(3, Math.max(0.6, t.z * f)) }))
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!answersReady) return
     if ((event.pointerType !== 'touch' && event.pointerType !== 'mouse') || event.button !== 0 || activePointers.current.has(event.pointerId)) return
@@ -377,7 +373,7 @@ function Universe() {
       const viewCenterY = rect.top + rect.height / 2
       const anchorX = pinch.startX + (pinch.startCenterX - viewCenterX) / (sx * pinch.startZoom)
       const anchorY = pinch.startY + (pinch.startCenterY - viewCenterY) / (sy * pinch.startZoom)
-      setTarget((t) => ({
+      updateTarget((t) => ({
         ...t,
         x: clamp(anchorX - (centerX - viewCenterX) / (sx * zoom)),
         y: clamp(anchorY - (centerY - viewCenterY) / (sy * zoom), 2.2),
@@ -404,7 +400,7 @@ function Universe() {
     const available = width - (wide && panelOpen ? 350 : 0)
     const sx = Math.max(1, Math.min(available * 0.4, height * 0.62))
     const sy = Math.max(1, height * (wide ? 0.36 : 0.3))
-    setTarget((t) => ({
+    updateTarget((t) => ({
       ...t,
       x: clamp(t.x - dx / (sx * t.z)),
       y: clamp(t.y - dy / (sy * t.z), 2.2),
@@ -447,7 +443,7 @@ function Universe() {
 
       if (event.ctrlKey) {
         const factor = Math.exp(-dy * 0.0025)
-        setTarget((t) => ({ ...t, z: Math.min(3, Math.max(0.6, t.z * factor)) }))
+        updateTarget((t) => ({ ...t, z: Math.min(3, Math.max(0.6, t.z * factor)) }))
         return
       }
 
@@ -455,7 +451,7 @@ function Universe() {
       const available = width - (wide && panelOpen ? 350 : 0)
       const sx = Math.max(1, Math.min(available * 0.4, height * 0.62))
       const sy = Math.max(1, height * (wide ? 0.36 : 0.3))
-      setTarget((t) => ({
+      updateTarget((t) => ({
         ...t,
         x: clamp(t.x + dx / (sx * t.z)),
         y: clamp(t.y + dy / (sy * t.z), 2.2),
@@ -474,7 +470,7 @@ function Universe() {
       window.removeEventListener('pointerup', onPointerEndOutside)
       window.removeEventListener('pointercancel', onPointerEndOutside)
     }
-  }, [panelOpen])
+  }, [panelOpen, updateTarget])
 
   return (
     <section className="scr uni">
@@ -497,14 +493,15 @@ function Universe() {
               readingLinks={readingLinks}
               syncLinks={syncLinks}
               selectedId={selectedId}
-              target={target}
+              targetRef={targetRef}
+              requestRenderRef={requestCanvasRenderRef}
               panelOpen={panelOpen}
               onPick={pick}
             />
           <div className="zc">
             <button aria-label="拡大" onClick={() => zoom(1.3)}>＋</button>
             <button aria-label="縮小" onClick={() => zoom(1 / 1.3)}>－</button>
-            <button aria-label="中心に戻す" onClick={() => { if (window.innerWidth <= 760) focusWorld(selectedId, 1, panelOpen); else setTarget(HOME) }}>◎</button>
+            <button aria-label="中心に戻す" onClick={() => { if (window.innerWidth <= 760) focusWorld(selectedId, 1, panelOpen); else updateTarget(HOME) }}>◎</button>
           </div>
           <div className="lgd" role="list" aria-label="星の等級と意味">
             <div role="listitem" aria-label={`${STAR_TIERS[2].name}：${STAR_TIERS[2].description}`}>
@@ -539,7 +536,7 @@ function Universe() {
                 if (window.innerWidth <= 760) {
                   focusWorld(world.id, 1.25, panelOpen)
                 } else {
-                  setTarget({
+                  updateTarget({
                     x: world.position.x,
                     y: world.position.y,
                     z: 1.8,
