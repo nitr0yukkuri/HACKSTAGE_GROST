@@ -78,7 +78,7 @@ variable "google_books_api_key_param_name" {
 variable "cors_allow_origins" {
   description = "CORS で許可するオリジン。ワイルドカード \"*\" は禁止。末尾スラッシュやパスは含めない。"
   type        = list(string)
-  default     = ["http://localhost:3000"]
+  default     = ["http://localhost:3000", "https://hoshirube-nitr0s-projects.vercel.app", "https://hoshirube.vercel.app"]
 
   validation {
     condition = length(var.cors_allow_origins) > 0 && alltrue([

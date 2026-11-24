@@ -85,7 +85,7 @@ const result = await booksRes.json();
 - AWS リージョンは ap-northeast-1（東京）。構成は API Gateway HTTP API → Lambda（TypeScript・`nodejs22.x`・arm64）→ Google Books / Bedrock。IaC は Terraform（`infra/terraform`、ローカル state）。
 - Google Books の API キーはバックエンドで保持し、ブラウザへ返さない。Bedrock は Lambda の IAM ロールで呼び、使用するモデル／推論プロファイルに必要な権限へ絞る。
 - Bedrock は Converse API で呼び、モデル ID は Lambda の環境変数 `BEDROCK_MODEL_ID` で切り替える。採用モデルは Qwen3 235B A22B 2507（`qwen.qwen3-235b-a22b-2507-v1:0`）で、処理リージョンは `ap-northeast-1`。Terraform の既定値と `terraform.tfvars` で設定する。`hackathon-dev` に Qwen と推薦順の選定を反映済み。星と推薦選定の出力は tool use（`submit_themes` / `submit_recommendations`）で構造化して受け取り、Lambda で再検証する。tool use が返らない場合だけテキスト JSON をフォールバックで読む。
-- CORS の許可オリジンは Terraform の `cors_allow_origins`。サンプルの `terraform.tfvars.example` はローカル開発用の `http://localhost:3000` だけを許可する（`hackathon-dev` など既存環境の設定はその環境の実値に従う）。`GET`・`POST`・`Content-Type`・`X-Discovery-Context` を許可し、Cookie は使わない。CORS は認証ではないため、Gateway のスロットリング、Lambda の同時実行上限、日次の外部呼び出し上限で守る。
+- CORS の許可オリジンは Terraform の `cors_allow_origins`。サンプルの `terraform.tfvars.example` はローカル開発用と、現行・旧Vercelオリジンを許可する（`hackathon-dev` など既存環境の設定はその環境の実値に従う）。`GET`・`POST`・`Content-Type`・`X-Discovery-Context` を許可し、Cookie は使わない。CORS は認証ではないため、Gateway のスロットリング、Lambda の同時実行上限、日次の外部呼び出し上限で守る。
 - 回答・推薦結果はアプリの DB に保存しない。ログは `requestId`・処理時間・件数・エラー種別を中心とし、回答全文・`X-Discovery-Context`・API キー・生成プロンプト全文を記録しない。日次カウンタのログには送信元 IP もその SHA256 の値も出さない。Bedrock の呼び出しログ設定も全文保存の有無を確認する。
 - 外部サービスへ送るのは選択回答・取得した書籍情報・検索語だけ。ブラウザ内の読書メモや履歴は送らない。
 - 月額上限・本番オリジン・レート制限の最終値は未確定。ハッカソン期間の暫定値として、Terraform のスロットリングはバースト 8・レート 3 req/s にしている（1人が seed 1回と books 最大3回を同時に送る前提）。`budget_alert_email` を設定したときだけ月次の予算アラート（実績80%・予測100%）を作る。`hackathon-dev` では実 API の疎通・処理時間・意味関連の代表例を確認済み。再デプロイは承認後に実行する。
@@ -130,7 +130,7 @@ aws ssm put-parameter --name /hoshirube/google-books-api-key --type SecureString
 
 1. 作業ディレクトリ（または worktree）と state を環境ごとに分ける。使う state は対象環境の原本または承認済みの作業コピーだけにし、他者の state や `hackathon-dev` の state を流用・改変しない。state と実 tfvars は追跡しない（リポジトリにもコミットしない）。
 2. AWS の認証情報・アカウント・リージョンが対象環境のものか確認する。認証情報そのものは表示・共有しない。
-3. `terraform.tfvars.example` をコピーし、`env`・`name_prefix`・`aws_region`・`bedrock_model_id`・上限・CORS を対象環境の実値にする。既存環境の tfvars は流用しない。サンプルの `cors_allow_origins` はローカルの `http://localhost:3000` だけであり、公開オリジンは承認された値だけを追加する。tfvars に秘密情報を書かない。
+3. `terraform.tfvars.example` をコピーし、`env`・`name_prefix`・`aws_region`・`bedrock_model_id`・上限・CORS を対象環境の実値にする。既存環境の tfvars は流用しない。サンプルの `cors_allow_origins` はローカルと現行・旧Vercelオリジンを含む。対象環境に必要な公開オリジンだけを設定する。tfvars に秘密情報を書かない。
 4. `npm --prefix backend run build` の後、`terraform init` と `terraform plan` を実行する。初回は意図した新規作成だけが表示され、`replace`（`-/+`）や `destroy` が無いことを確認する。想定外の差分があれば apply しない。
 5. 承認後に `terraform apply` を実行し、確認表示の plan がレビュー済みの内容と一致することを確かめる。
 
