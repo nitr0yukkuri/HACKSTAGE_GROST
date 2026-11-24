@@ -59,6 +59,25 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer | null {
   gl.enable(gl.BLEND)
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
 
+  const createUploadBuffer = (buffer: WebGLBuffer, initialCapacity: number) => {
+    let data = new Float32Array(initialCapacity)
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+    gl.bufferData(gl.ARRAY_BUFFER, data.byteLength, gl.DYNAMIC_DRAW)
+
+    return (values: number[]) => {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+      if (values.length > data.length) {
+        data = new Float32Array(Math.max(values.length, data.length * 2))
+        gl.bufferData(gl.ARRAY_BUFFER, data.byteLength, gl.DYNAMIC_DRAW)
+      }
+      for (let i = 0; i < values.length; i++) data[i] = values[i]
+      if (values.length > 0) gl.bufferSubData(gl.ARRAY_BUFFER, 0, data, 0, values.length)
+    }
+  }
+
+  const uploadPoints = createUploadBuffer(P.buf, 2048)
+  const uploadLines = createUploadBuffer(L.buf, 1024)
+
   return {
     draw(points, lines, t) {
       const dp = devicePixelRatio || 1
@@ -70,15 +89,13 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer | null {
 
       gl.useProgram(lp)
       gl.bindVertexArray(L.vao)
-      gl.bindBuffer(gl.ARRAY_BUFFER, L.buf)
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(lines), gl.DYNAMIC_DRAW)
+      uploadLines(lines)
       gl.uniform2f(uL, w, h)
       gl.drawArrays(gl.LINES, 0, lines.length / 3)
 
       gl.useProgram(pp)
       gl.bindVertexArray(P.vao)
-      gl.bindBuffer(gl.ARRAY_BUFFER, P.buf)
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(points), gl.DYNAMIC_DRAW)
+      uploadPoints(points)
       gl.uniform2f(uP.r, w, h)
       gl.uniform1f(uP.t, t)
       gl.drawArrays(gl.POINTS, 0, points.length / 8)

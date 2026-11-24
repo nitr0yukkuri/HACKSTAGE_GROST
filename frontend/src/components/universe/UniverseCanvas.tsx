@@ -14,7 +14,8 @@ interface Props {
   readingLinks: { from: string; to: string; reason: 'shared-book' | 'reading-journey' }[]
   syncLinks: SyncLink[]
   selectedId: string | null
-  target: ViewState
+  targetRef: { current: ViewState }
+  requestRenderRef: { current: () => void }
   panelOpen: boolean
   onPick: (id: string) => void
 }
@@ -62,12 +63,17 @@ export default function UniverseCanvas(props: Props) {
     let raf = 0
     let contextLost = false
     let disposed = false
+    const positions = new Map<string, [number, number]>()
+    const activeWorldIds = new Set<string>()
+    const points: number[] = []
+    const lines: number[] = []
 
     const frame = (ms: number) => {
       raf = 0
       raf = 0
       if (document.hidden || contextLost || disposed) return
-      const { worlds, tiers, completedWorldIds, suggestedIds, readingLinks, syncLinks, syncTargetIds, selectedId, target, panelOpen } = live.current
+      const { worlds, tiers, completedWorldIds, suggestedIds, readingLinks, syncLinks, syncTargetIds, selectedId, targetRef, panelOpen } = live.current
+      const target = targetRef.current
       const dp = devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight
       if (W !== measuredLabelViewport || selectedId !== measuredLabelSelection || tiers !== measuredLabelTiers || completedWorldIds !== measuredCompletedWorldIds || worlds !== measuredLabelWorlds) {
         labelWidths.clear()
@@ -92,11 +98,15 @@ export default function UniverseCanvas(props: Props) {
       const wide = W > 760, avail = W - (wide && panelOpen ? 350 : 0)
       const cx = avail / 2, cy = H / 2, sx = Math.min(avail * 0.4, H * 0.62), sy = H * (wide ? 0.36 : 0.3)
 
-      const pos = new Map<string, [number, number]>()
+      activeWorldIds.clear()
       worlds.forEach((w) => {
         k[w.id] = reducedMotion ? 1 : Math.min(1, (k[w.id] ?? (w.level === 1 ? 1 : 0)) + 0.04)
         const x = cx + (w.position.x - view.x) * sx * view.z, y = cy + (w.position.y - view.y) * sy * view.z
-        pos.set(w.id, [x, y])
+        const position = positions.get(w.id) ?? [0, 0]
+        position[0] = x
+        position[1] = y
+        positions.set(w.id, position)
+        activeWorldIds.add(w.id)
         const el = labels.current[w.id]
         if (el) {
           const mobile = W <= 760
@@ -112,10 +122,14 @@ export default function UniverseCanvas(props: Props) {
         }
       })
 
-      const pts: number[] = []
-      bg.forEach((s) => pts.push(s[0] * W * dp, s[1] * H * dp, s[2] * dp, s[3], s[4], 0.6, 0.75, 1))
+      for (const id of positions.keys()) {
+        if (!activeWorldIds.has(id)) positions.delete(id)
+      }
+
+      points.length = 0
+      bg.forEach((s) => points.push(s[0] * W * dp, s[1] * H * dp, s[2] * dp, s[3], s[4], 0.6, 0.75, 1))
       worlds.forEach((w) => {
-        const t = tiers[w.id] ?? 0, kk = k[w.id], [x, y] = pos.get(w.id)!, sel = w.id === selectedId
+        const t = tiers[w.id] ?? 0, kk = k[w.id], [x, y] = positions.get(w.id)!, sel = w.id === selectedId
         const complete = completedWorldIds.has(w.id)
         const suggested = suggestedIds.has(w.id)
         const synced = syncTargetIds.has(w.id)
@@ -129,25 +143,25 @@ export default function UniverseCanvas(props: Props) {
           : synced
             ? Math.min(1, baseBrightness * (1.2 + syncPulse * 0.3))
             : baseBrightness
-        if (synced) pts.push(x * dp, y * dp, size * 1.65 * dp, 0.28 + syncPulse * 0.1, (x * 0.013) % 1, ...SYNC)
-        pts.push(x * dp, y * dp, size * dp, suggested ? brightness * 0.2 : brightness, (x * 0.013) % 1, ...c)
+        if (synced) points.push(x * dp, y * dp, size * 1.65 * dp, 0.28 + syncPulse * 0.1, (x * 0.013) % 1, ...SYNC)
+        points.push(x * dp, y * dp, size * dp, suggested ? brightness * 0.2 : brightness, (x * 0.013) % 1, ...c)
       })
 
       if (syncPulse > 0.01) {
         syncLinks.forEach(({ from, to }) => {
-          const source = pos.get(from), destination = pos.get(to)
+          const source = positions.get(from), destination = positions.get(to)
           if (!source || !destination) return
           const easedProgress = syncProgress * syncProgress * (3 - 2 * syncProgress)
           const x = source[0] + (destination[0] - source[0]) * easedProgress
           const y = source[1] + (destination[1] - source[1]) * easedProgress
-          pts.push(x * dp, y * dp, (9 + syncPulse * 5) * dp, syncPulse * 0.95, (x * 0.013) % 1, 0.58, 0.88, 1)
+          points.push(x * dp, y * dp, (9 + syncPulse * 5) * dp, syncPulse * 0.95, (x * 0.013) % 1, 0.58, 0.88, 1)
         })
       }
 
-      const ln: number[] = []
+      lines.length = 0
       const seg = (a: string, b: string, al: number) => {
-        const p = pos.get(a), q = pos.get(b)
-        if (p && q) ln.push(p[0] * dp, p[1] * dp, al, q[0] * dp, q[1] * dp, al)
+        const p = positions.get(a), q = positions.get(b)
+        if (p && q) lines.push(p[0] * dp, p[1] * dp, al, q[0] * dp, q[1] * dp, al)
       }
       // 大ジャンル間の固定線は初期表示しない。
       // 読了によって解放された小ジャンルと親ジャンルを接続する。
@@ -165,13 +179,15 @@ export default function UniverseCanvas(props: Props) {
       // 全冊完読から次の星へ続く線を強調する。
       syncLinks.forEach(({ from, to }) => seg(from, to, 0.5 + syncPulse * 0.45))
 
-      renderer.draw(pts, ln, reducedMotion ? 0 : ms / 1000)
+      renderer.draw(points, lines, reducedMotion ? 0 : ms / 1000)
       if (!reducedMotion) raf = requestAnimationFrame(frame)
     }
     const scheduleFrame = () => {
       if (!raf && !document.hidden && !contextLost && !disposed) raf = requestAnimationFrame(frame)
     }
     scheduleRender.current = scheduleFrame
+    const requestRenderRef = props.requestRenderRef
+    requestRenderRef.current = scheduleFrame
     const onVisibilityChange = () => {
       if (document.hidden) {
         cancelAnimationFrame(raf)
@@ -205,13 +221,14 @@ export default function UniverseCanvas(props: Props) {
       window.removeEventListener('resize', onResize)
       canvas.removeEventListener('webglcontextlost', onContextLost)
       scheduleRender.current = () => {}
+      if (requestRenderRef.current === scheduleFrame) requestRenderRef.current = () => {}
       renderer.dispose()
     }
-  }, [])
+  }, [props.requestRenderRef])
 
   useEffect(() => {
     scheduleRender.current()
-  }, [props.worlds, props.tiers, props.completedWorldIds, props.suggestedIds, props.readingLinks, props.syncLinks, props.selectedId, props.target, props.panelOpen])
+  }, [props.worlds, props.tiers, props.completedWorldIds, props.suggestedIds, props.readingLinks, props.syncLinks, props.selectedId, props.panelOpen])
 
   useEffect(() => {
     syncAnimationStartedAt.current = syncSignature ? performance.now() : null
