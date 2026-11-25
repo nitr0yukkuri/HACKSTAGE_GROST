@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Tier, World } from '../../types/hoshirube'
 import { createRenderer } from '../../lib/webgl/renderer'
+import { CONNECTIONS } from '../../data/connections'
 import { STAR_TIERS } from '../../lib/star-tiers'
 
 export interface ViewState { x: number; y: number; z: number }
@@ -23,6 +24,8 @@ interface Props {
 type RGB = [number, number, number]
 const SYNC: RGB = [0.25, 0.76, 1]
 const TIER_COLOR: RGB[] = [[0.45, 0.5, 0.68], SYNC, [1, 0.72, 0.4]]
+const TIER_LINE_ALPHA = [0.1, 0.28, 0.7] as const
+const edgeKey = (a: string, b: string) => a < b ? `${a}:${b}` : `${b}:${a}`
 
 /** WebGL2で星と星座線を描き、ラベル(button)をHTMLで重ねる。状態はpropsから受け取るだけ */
 export default function UniverseCanvas(props: Props) {
@@ -31,10 +34,11 @@ export default function UniverseCanvas(props: Props) {
   const syncAnimationStartedAt = useRef<number | null>(null)
   const syncSignature = useMemo(() => syncLinks.map((link) => `${link.from}>${link.to}`).join('|'), [syncLinks])
   const syncTargetIds = useMemo(() => new Set(syncLinks.map((link) => link.to)), [syncLinks])
+  const syncEdgeKeys = useMemo(() => new Set(syncLinks.map((link) => edgeKey(link.from, link.to))), [syncLinks])
   const labels = useRef<Record<string, HTMLButtonElement | null>>({})
-  const live = useRef({ ...props, syncTargetIds })
+  const live = useRef({ ...props, syncTargetIds, syncEdgeKeys })
   const scheduleRender = useRef<() => void>(() => {})
-  live.current = { ...props, syncTargetIds }
+  live.current = { ...props, syncTargetIds, syncEdgeKeys }
   const [noGl, setNoGl] = useState(false)
   const [glError, setGlError] = useState<string | null>(null)
 
@@ -72,7 +76,7 @@ export default function UniverseCanvas(props: Props) {
       raf = 0
       raf = 0
       if (document.hidden || contextLost || disposed) return
-      const { worlds, tiers, completedWorldIds, suggestedIds, readingLinks, syncLinks, syncTargetIds, selectedId, targetRef, panelOpen } = live.current
+      const { worlds, tiers, completedWorldIds, suggestedIds, readingLinks, syncLinks, syncTargetIds, syncEdgeKeys, selectedId, targetRef, panelOpen } = live.current
       const target = targetRef.current
       const dp = devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight
       if (W !== measuredLabelViewport || selectedId !== measuredLabelSelection || tiers !== measuredLabelTiers || completedWorldIds !== measuredCompletedWorldIds || worlds !== measuredLabelWorlds) {
@@ -163,7 +167,12 @@ export default function UniverseCanvas(props: Props) {
         const p = positions.get(a), q = positions.get(b)
         if (p && q) lines.push(p[0] * dp, p[1] * dp, al, q[0] * dp, q[1] * dp, al)
       }
-      // 大ジャンル間の固定線は初期表示しない。
+      // 質問回答の等級に応じて、大ジャンル間の線を初期表示する。
+      CONNECTIONS.forEach(([a, b]) => {
+        const baseAlpha = TIER_LINE_ALPHA[Math.min(tiers[a] ?? 0, tiers[b] ?? 0)]
+        const synchronizedAlpha = syncEdgeKeys.has(edgeKey(a, b)) ? 0.5 + syncPulse * 0.45 : 0
+        seg(a, b, Math.max(baseAlpha, synchronizedAlpha))
+      })
       // 読了によって解放された小ジャンルと親ジャンルを接続する。
       worlds.forEach((w) => w.parentId && seg(
         w.parentId,
@@ -176,8 +185,7 @@ export default function UniverseCanvas(props: Props) {
         seg(from, to, reason === 'shared-book' ? 0.65 : 0.35)
       })
 
-      // 全冊完読から次の星へ続く線を強調する。
-      syncLinks.forEach(({ from, to }) => seg(from, to, 0.5 + syncPulse * 0.45))
+      // 全冊完読から次の星へ続く固定線は、上のCONNECTIONS描画で強調する。
 
       renderer.draw(points, lines, reducedMotion ? 0 : ms / 1000)
       if (!reducedMotion) raf = requestAnimationFrame(frame)
