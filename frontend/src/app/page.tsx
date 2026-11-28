@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import StartRocketButton from '../components/common/StartRocketButton'
 import StarCursorTrail from '../components/common/StarCursorTrail'
 import Logo from '../components/common/Logo'
+import { SEO_TOPICS } from '../data/seo-topics'
 import { SITE_DESCRIPTION, SITE_URL } from '../lib/site'
 
 export const metadata: Metadata = {
@@ -94,6 +96,24 @@ export default function WelcomePage() {
             </li>
           </ol>
           <a className="welcome-details__link" href="/onboarding">冒険をはじめる</a>
+
+          <section className="welcome-topics" aria-labelledby="welcome-topics-title">
+            <p className="welcome-details__eyebrow">READING THEMES</p>
+            <h2 id="welcome-topics-title">気になるテーマから、本の世界へ。</h2>
+            <p className="welcome-topics__intro">
+              知りたいことや身近な疑問を入口に、次に読みたいテーマを見つけてみませんか。
+            </p>
+            <ul className="welcome-topics__list">
+              {SEO_TOPICS.map((topic) => (
+                <li key={topic.slug}>
+                  <Link href={`/books/${topic.slug}`}>
+                    <span>{topic.title.split('｜')[0]}</span>
+                    <span aria-hidden="true">→</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
         </div>
       </section>
     </main>
