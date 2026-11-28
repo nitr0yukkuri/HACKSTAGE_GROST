@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --webpack",
+    "build": "next build --webpack && node scripts/prepare-standalone.mjs",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
     "test:reading-progress": "node --test test/reading-progress.test.mjs"
