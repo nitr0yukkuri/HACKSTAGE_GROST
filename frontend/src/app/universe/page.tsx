@@ -514,11 +514,11 @@ function Universe() {
           <div className="lgd" role="list" aria-label="星の等級と意味">
             <div role="listitem" aria-label={`${STAR_TIERS[2].name}：${STAR_TIERS[2].description}`}>
               <span className="lgd__star lgd__star--first" aria-hidden="true" />
-              <span className="lgd__text"><strong>{STAR_TIERS[2].name}</strong><small>{STAR_TIERS[2].description}</small></span>
+              <span className="lgd__text"><strong>{STAR_TIERS[2].name}</strong></span>
             </div>
             <div role="listitem" aria-label={`${STAR_TIERS[1].name}：${STAR_TIERS[1].description}`}>
               <span className="lgd__star lgd__star--second" aria-hidden="true" />
-              <span className="lgd__text"><strong>{STAR_TIERS[1].name}</strong><small>{STAR_TIERS[1].description}</small></span>
+              <span className="lgd__text"><strong>{STAR_TIERS[1].name}</strong></span>
             </div>
             <div role="listitem" aria-label={`${STAR_TIERS[0].name}：${STAR_TIERS[0].description}`}>
               <span className="lgd__star lgd__star--third" aria-hidden="true" />
