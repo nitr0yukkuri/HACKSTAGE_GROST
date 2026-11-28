@@ -17,7 +17,7 @@ export default function AppHeader({ active, showReset = true }: { active: Active
           探索
         </Link>
         <Link href="/library" className={`site-nav__tab${active === 'library' ? ' is-active' : ''}`} aria-current={active === 'library' ? 'page' : undefined}>
-          ライブラリ
+          本棚
         </Link>
       </nav>
       {showReset && <Link href="/onboarding" className="site-nav__reset">質問をやり直す</Link>}

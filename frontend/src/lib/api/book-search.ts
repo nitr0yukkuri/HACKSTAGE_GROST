@@ -1,7 +1,8 @@
 import type { Book } from '../../types/hoshirube'
+import { BOOKS } from '../../data/books'
 import { WORLDS } from '../../data/worlds'
 import { normalizeBookCoverUrl } from '../book-covers'
-import { DiscoveryApiError, requestJson } from './discovery'
+import { DiscoveryApiError, isDiscoveryApiConfigured, requestJson } from './discovery'
 
 export interface BookSearchResult {
   items: Book[]
@@ -14,6 +15,25 @@ const nonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0
 
 const WORLD_IDS = new Set(WORLDS.map((world) => world.id))
+
+function normalizeSearchText(value: string): string {
+  return value.normalize('NFKC').toLocaleLowerCase()
+}
+
+function searchLocalDemoBooks(query: string): BookSearchResult {
+  const terms = normalizeSearchText(query).trim().split(/\s+/).filter(Boolean)
+  if (terms.length === 0) return { items: [] }
+
+  const items = BOOKS.filter((book) => {
+    if (book.source !== 'local_demo') return false
+    const searchableText = normalizeSearchText(`${book.title} ${book.authors.join(' ')}`)
+    return terms.every((term) => searchableText.includes(term))
+  }).slice(0, 12)
+
+  return {
+    items: items.map((book) => ({ ...book, authors: [...book.authors], worldIds: [...book.worldIds] })),
+  }
+}
 
 function isBook(value: unknown): value is Book {
   return isRecord(value) && nonEmptyString(value.id) && value.source === 'google_books' &&
@@ -30,6 +50,8 @@ function isBook(value: unknown): value is Book {
 }
 
 export async function searchGoogleBooks(query: string, signal?: AbortSignal): Promise<BookSearchResult> {
+  if (!isDiscoveryApiConfigured()) return searchLocalDemoBooks(query)
+
   const params = new URLSearchParams({ q: query })
   const payload = await requestJson(`/v1/books/search?${params}`, {
     method: 'GET',

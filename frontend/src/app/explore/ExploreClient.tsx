@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 
 import AppHeader from '../../components/common/AppHeader'
 import { WORLDS } from '../../data/worlds'
 import { searchGoogleBooks } from '../../lib/api/book-search'
+import { isDiscoveryApiConfigured } from '../../lib/api/discovery'
 import { libraryBookKey } from '../../lib/library-store'
 import useLibrary from '../../lib/useLibrary'
 import type { Book } from '../../types/hoshirube'
@@ -130,6 +131,10 @@ export default function ExploreClient() {
               </svg>
             </button>
           </form>
+
+          {!isDiscoveryApiConfigured() && (
+            <p className="explore-status" role="note">展示用デモでは、収録されたサンプル本を検索できます。</p>
+          )}
 
           {hasCurrentSearch && isLoading && <p className="explore-status" role="status" aria-busy="true">Google Booksで検索中…</p>}
           {hasCurrentSearch && searchError && <p className="explore-empty explore-empty--error" role="alert">{searchError}</p>}
