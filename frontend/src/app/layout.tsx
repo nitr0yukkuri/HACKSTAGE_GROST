@@ -4,14 +4,30 @@ import StarfieldBackground from '../components/common/StarfieldBackground'
 import PwaRegister from '../components/common/PwaRegister'
 import { SITE_DESCRIPTION, SITE_URL } from '../lib/site'
 
+const publicSiteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : SITE_URL)
+
 export const metadata: Metadata = {
-  metadataBase: new URL(SITE_URL),
+  metadataBase: new URL(publicSiteUrl),
   title: {
     default: 'ほしるべ',
     template: '%s | ほしるべ',
   },
   description: SITE_DESCRIPTION,
   applicationName: 'ほしるべ',
+  openGraph: {
+    type: 'website',
+    locale: 'ja_JP',
+    siteName: 'ほしるべ',
+    title: 'ほしるべ',
+    description: SITE_DESCRIPTION,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'ほしるべ',
+    description: SITE_DESCRIPTION,
+  },
   appleWebApp: {
     capable: true,
     title: 'ほしるべ',
