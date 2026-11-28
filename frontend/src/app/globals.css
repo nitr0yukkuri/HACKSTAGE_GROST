@@ -18,6 +18,22 @@ button{font:inherit;color:inherit;cursor:pointer}
 @keyframes mt{0%{opacity:0;transform:translate(60px,-50px) rotate(-38deg)}4%{opacity:.55}12%{opacity:1}22%,100%{opacity:0;transform:translate(-200px,160px) rotate(-38deg)}}
 .scr{position:absolute;inset:0;z-index:1;display:flex;animation:in .5s;flex-direction:column;align-items:center;justify-content:center;text-align:center}
 
+.welcome-page{position:absolute;inset:0;z-index:1;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-color:rgba(156,196,255,.45) transparent}
+.welcome-page>.welcome-hero{position:relative;inset:auto;min-height:100vh;min-height:100svh}
+.welcome-details{position:relative;z-index:1;padding:96px 24px 112px;background:linear-gradient(180deg,rgba(5,10,26,.72),rgba(5,10,26,.97) 18%,#050a1a)}
+.welcome-details__inner{width:min(780px,100%);margin:0 auto}
+.welcome-details__eyebrow{margin:0 0 16px;color:#9cc4ff;font-size:12px;font-weight:700;letter-spacing:.18em}
+.welcome-details h2{margin:0;color:#f3f7ff;font-size:clamp(26px,5vw,38px);font-weight:650;letter-spacing:.04em;line-height:1.5}
+.welcome-details__intro{max-width:680px;margin:18px 0 0;color:#c7d5f2;font-size:16px;line-height:2}
+.welcome-steps{display:grid;gap:12px;margin:34px 0 0;padding:0;list-style:none}
+.welcome-steps li{display:flex;gap:18px;align-items:flex-start;padding:20px 22px;border:1px solid rgba(130,170,255,.2);border-radius:18px;background:rgba(13,21,42,.68)}
+.welcome-steps__number{flex:0 0 auto;color:#9cc4ff;font-size:13px;font-weight:700;letter-spacing:.08em}
+.welcome-steps h3{margin:0;color:#eef4ff;font-size:16px;font-weight:650;line-height:1.6}
+.welcome-steps p{margin:5px 0 0;color:#aebfe3;font-size:14px;line-height:1.8}
+.welcome-details__link{display:inline-flex;align-items:center;justify-content:center;min-height:48px;margin-top:28px;padding:10px 24px;border:1px solid rgba(156,196,255,.65);border-radius:999px;color:#eef4ff;font-weight:650;text-decoration:none;background:rgba(29,57,116,.55);transition:background .2s,border-color .2s}
+.welcome-details__link:hover{border-color:#d4e5ff;background:rgba(54,91,165,.72)}
+@media(max-width:600px){.welcome-details{padding:72px 20px 88px}.welcome-details__intro{font-size:15px}.welcome-steps li{gap:14px;padding:17px 16px}}
+
 @keyframes in{from{opacity:0}}
 @keyframes constellation-complete{0%{opacity:0;transform:translate(-50%,-50%) scale(.35)}18%{opacity:.95}100%{opacity:0;transform:translate(-50%,-50%) scale(2)}}
 @keyframes constellation-sync{0%{opacity:0;transform:translate(-50%,-50%) scale(.45)}24%{opacity:.9}100%{opacity:0;transform:translate(-50%,-50%) scale(1.85)}}
