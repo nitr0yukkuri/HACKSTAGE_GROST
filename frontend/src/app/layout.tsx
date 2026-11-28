@@ -2,10 +2,15 @@ import './globals.css'
 import type { Metadata, Viewport } from 'next'
 import StarfieldBackground from '../components/common/StarfieldBackground'
 import PwaRegister from '../components/common/PwaRegister'
+import { SITE_DESCRIPTION, SITE_URL } from '../lib/site'
 
 export const metadata: Metadata = {
-  title: 'ほしるべ',
-  description: '本を通して、まだ知らない“好き”に出会う。',
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: 'ほしるべ',
+    template: '%s | ほしるべ',
+  },
+  description: SITE_DESCRIPTION,
   applicationName: 'ほしるべ',
   appleWebApp: {
     capable: true,
